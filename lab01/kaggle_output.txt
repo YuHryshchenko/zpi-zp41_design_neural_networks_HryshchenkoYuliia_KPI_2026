@@ -1,0 +1,79 @@
+2026-05-21 19:30:59.758178: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1779391860.174128      57 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1779391860.309393      57 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1779391861.307030      57 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1779391861.307108      57 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1779391861.307110      57 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1779391861.307113      57 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+Привіт, Kaggle!
+Масив чисел: [1, 2, 3, 4, 5]
+Сума чисел: 15
+
+============================================================
+ПРИКЛАД: XOR для 3-х змінних
+============================================================
+/usr/local/lib/python3.12/dist-packages/keras/src/layers/core/dense.py:93: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+  super().__init__(activity_regularizer=activity_regularizer, **kwargs)
+2026-05-21 19:31:45.164222: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: UNKNOWN ERROR (303)
+loss 0.3556562066078186
+accuracy 0.5
+[0 0 0] 0
+[0 0 1] 1
+[0 1 0] 0
+[1 0 0] 0
+[0 1 1] 1
+[1 0 1] 1
+[1 1 0] 0
+[1 1 1] 1
+
+============================================================
+ЗАВДАННЯ: XOR для 4-х змінних
+============================================================
+Таблиця істинності XOR(a, b, c, d):
+   a  b  c  d | XOR
+  ------------------
+   0  0  0  0 |  0
+   0  0  0  1 |  1
+   0  0  1  0 |  1
+   0  0  1  1 |  0
+   0  1  0  0 |  1
+   0  1  0  1 |  0
+   0  1  1  0 |  0
+   0  1  1  1 |  1
+   1  0  0  0 |  1
+   1  0  0  1 |  0
+   1  0  1  0 |  0
+   1  0  1  1 |  1
+   1  1  0  0 |  0
+   1  1  0  1 |  1
+   1  1  1  0 |  1
+   1  1  1  1 |  0
+
+Навчання моделі (макс. 500 епох)...
+loss     0.0872
+accuracy 0.9375
+
+Прогнози моделі:
+   a  b  c  d | Очік. | Прогн.
+  ----------------------------
+   0  0  0  0 |   0   |   0   ✓
+   0  0  0  1 |   1   |   1   ✓
+   0  0  1  0 |   1   |   1   ✓
+   0  0  1  1 |   0   |   0   ✓
+   0  1  0  0 |   1   |   1   ✓
+   0  1  0  1 |   0   |   0   ✓
+   0  1  1  0 |   0   |   0   ✓
+   0  1  1  1 |   1   |   1   ✓
+   1  0  0  0 |   1   |   1   ✓
+   1  0  0  1 |   0   |   0   ✓
+   1  0  1  0 |   0   |   0   ✓
+   1  0  1  1 |   1   |   0   ✗
+   1  1  0  0 |   0   |   0   ✓
+   1  1  0  1 |   1   |   1   ✓
+   1  1  1  0 |   1   |   1   ✓
+   1  1  1  1 |   0   |   0   ✓
+
+Правильно класифіковано: 15/16
+
+Графік збережено: training_history_xor4.png
