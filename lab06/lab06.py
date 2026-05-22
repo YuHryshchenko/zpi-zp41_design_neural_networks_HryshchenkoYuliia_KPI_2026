@@ -10,35 +10,34 @@
 
 import os
 import cv2
+import time
+import glob
 import random
 import zipfile
+import datetime
 import numpy as np
+import pandas as pd
 import urllib.request
+import seaborn as sns
 from PIL import Image
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 # from google.colab import drive
+from scipy.ndimage import median_filter
 import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from sklearn.metrics import (
+    confusion_matrix, classification_report,
+    accuracy_score, precision_score, recall_score, f1_score
+)
 
 # ============================================================
 # КРОК 1. Завантаження даних з GitHub та автоматична 
 # генерація фонових зображень і датасету
 # ============================================================
-# ============================================================
-# КРОК 1. Завантаження даних з GitHub та автоматична 
-# генерація фонових зображень і датасету
-# ============================================================
-
-import os
-import random
-import urllib.request
-import zipfile
-from PIL import Image
-from tqdm import tqdm
 
 # --- 1.1 Завантаження архіву з логотипами ---
 GITHUB_URL_BASE = "https://github.com/YuHryshchenko/zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026/raw/main/lab06/"
@@ -73,13 +72,13 @@ else:
 background_dir = os.path.join(EXTRACT_DIR, 'backgrounds')
 os.makedirs(background_dir, exist_ok=True)
 
-# 5 різноманітних відкритих зображень (місто, природа, дорога, кімната, абстракція)
+# Використовуємо сервіс Picsum для стабільного отримання 5 різних фонів розміром 800x600
 bg_urls = [
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/New_York_City_Night_Skyline.jpg/800px-New_York_City_Night_Skyline.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Shaqi_jrvej.jpg/800px-Shaqi_jrvej.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Carretera_Austral_-_Chile.jpg/800px-Carretera_Austral_-_Chile.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Living_Room_1.jpg/800px-Living_Room_1.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Pleiades_large.jpg/800px-Pleiades_large.jpg"
+    "https://picsum.photos/seed/city/800/600",
+    "https://picsum.photos/seed/nature/800/600",
+    "https://picsum.photos/seed/road/800/600",
+    "https://picsum.photos/seed/room/800/600",
+    "https://picsum.photos/seed/abstract/800/600"
 ]
 
 print("Перевірка та завантаження фонових зображень...")
@@ -87,12 +86,14 @@ for i, url in enumerate(bg_urls):
     bg_file_path = os.path.join(background_dir, f"bg_{i}.jpg")
     if not os.path.exists(bg_file_path):
         try:
-            urllib.request.urlretrieve(url, bg_file_path)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            with urllib.request.urlopen(req) as response, open(bg_file_path, 'wb') as out_file:
+                out_file.write(response.read())
         except Exception as e:
             print(f"Не вдалося завантажити фон {url}: {e}")
 
 # --- Налаштування шляхів ---
-logo_dir   = os.path.join(EXTRACT_DIR, 'logos')
+logo_dir   = os.path.join(EXTRACT_DIR, 'raw-img/toyota')
 output_dir = './dataset'
 
 splits  = ['train', 'val', 'test']
@@ -120,6 +121,12 @@ def augment_logo(logo):
 logo_files = [os.path.join(logo_dir, f) for f in os.listdir(logo_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
 background_files = [os.path.join(background_dir, f) for f in os.listdir(background_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
 
+# Перевірка на всякий випадок, щоб уникнути помилки IndexError, якщо картинки не завантажаться
+if not background_files:
+    raise ValueError("Помилка: Немає фонових зображень у папці backgrounds! Перевірте інтернет-з'єднання або завантажте кілька картинок туди вручну.")
+if not logo_files:
+    raise ValueError("Помилка: Немає зображень логотипів у папці logos! Перевірте архів.")
+
 total_positive = 1000
 total_negative = 1000
 split_ratios   = {'train': 0.7, 'val': 0.15, 'test': 0.15}
@@ -131,71 +138,104 @@ def get_split_name(idx, total):
     elif idx < test_thresh: return 'val'
     else: return 'test'
 
-# --- Генерація позитивних зразків (логотип на фоні) ---
-i = 0
-pbar = tqdm(total=total_positive, desc='Generating positive samples')
+# ── Підрахунок вже наявних зображень ──────────────────────────
+def count_dataset_images(output_dir, splits, classes):
+    """Повертає загальну кількість вже наявних зображень у датасеті."""
+    total = 0
+    for split in splits:
+        for cls in classes:
+            folder = os.path.join(output_dir, split, cls)
+            if os.path.isdir(folder):
+                total += len([f for f in os.listdir(folder)
+                               if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+    return total
 
-while i < total_positive:
-    bg_path   = random.choice(background_files)
-    logo_path = random.choice(logo_files)
-    try:
-        bg   = Image.open(bg_path).convert('RGB')
-        logo = Image.open(logo_path).convert('RGBA')
-    except Exception:
-        continue
+existing_images = count_dataset_images(output_dir, splits, classes)
+expected_images = total_positive + total_negative   # 2000
 
-    # Випадковий кроп (зріз) фону, щоб створити ще більше різноманіття
-    crop_w, crop_h = 300, 300
-    if bg.width > crop_w and bg.height > crop_h:
-        cx = random.randint(0, bg.width - crop_w)
-        cy = random.randint(0, bg.height - crop_h)
-        bg = bg.crop((cx, cy, cx + crop_w, cy + crop_h))
+if existing_images >= expected_images:
+    print(f"Датасет вже існує ({existing_images} зображень). Генерацію пропущено.")
+else:
+    print(f"Знайдено {existing_images}/{expected_images} зображень. Починаємо генерацію...")
 
-    logo = augment_logo(logo)
+    # --- Генерація позитивних зразків (логотип на фоні) ---
+    # Визначаємо, скільки вже є в кожній split/class, щоб не перезаписувати
+    pos_existing = sum(
+        len(os.listdir(os.path.join(output_dir, s, 'positive')))
+        for s in splits if os.path.isdir(os.path.join(output_dir, s, 'positive'))
+    )
+    neg_existing = sum(
+        len(os.listdir(os.path.join(output_dir, s, 'negative')))
+        for s in splits if os.path.isdir(os.path.join(output_dir, s, 'negative'))
+    )
 
-    if logo.width > bg.width or logo.height > bg.height:
-        logo.thumbnail((bg.width, bg.height))
+    if pos_existing < total_positive:
+        i    = pos_existing          # продовжуємо нумерацію з того місця, де зупинились
+        pbar = tqdm(total=total_positive - pos_existing, desc='Generating positive samples')
 
-    max_x = bg.width  - logo.width
-    max_y = bg.height - logo.height
-    if max_x < 0 or max_y < 0:
-        continue
+        while i < total_positive:
+            bg_path   = random.choice(background_files)
+            logo_path = random.choice(logo_files)
+            try:
+                bg   = Image.open(bg_path).convert('RGB')
+                logo = Image.open(logo_path).convert('RGBA')
+            except Exception:
+                continue
 
-    x = random.randint(0, max_x)
-    y = random.randint(0, max_y)
-    bg.paste(logo, (x, y), logo)
+            crop_w, crop_h = 300, 300
+            if bg.width > crop_w and bg.height > crop_h:
+                cx = random.randint(0, bg.width - crop_w)
+                cy = random.randint(0, bg.height - crop_h)
+                bg = bg.crop((cx, cy, cx + crop_w, cy + crop_h))
 
-    split = get_split_name(i, total_positive)
-    bg.save(os.path.join(output_dir, split, 'positive', f'pos_{i}.jpg'))
-    i += 1
-    pbar.update(1)
-pbar.close()
+            logo = augment_logo(logo)
 
-# --- Генерація негативних зразків (тільки фон) ---
-i = 0
-pbar = tqdm(total=total_negative, desc='Generating negative samples')
+            if logo.width > bg.width or logo.height > bg.height:
+                logo.thumbnail((bg.width, bg.height))
 
-while i < total_negative:
-    bg_path = random.choice(background_files)
-    try:
-        bg = Image.open(bg_path).convert('RGB')
-    except Exception:
-        continue
+            max_x = bg.width  - logo.width
+            max_y = bg.height - logo.height
+            if max_x < 0 or max_y < 0:
+                continue
 
-    # Так само робимо випадковий кроп для негативних семплів
-    crop_w, crop_h = 300, 300
-    if bg.width > crop_w and bg.height > crop_h:
-        cx = random.randint(0, bg.width - crop_w)
-        cy = random.randint(0, bg.height - crop_h)
-        bg = bg.crop((cx, cy, cx + crop_w, cy + crop_h))
+            x = random.randint(0, max_x)
+            y = random.randint(0, max_y)
+            bg.paste(logo, (x, y), logo)
 
-    split = get_split_name(i, total_negative)
-    bg.save(os.path.join(output_dir, split, 'negative', f'neg_{i}.jpg'))
-    i += 1
-    pbar.update(1)
-pbar.close()
+            split = get_split_name(i, total_positive)
+            bg.save(os.path.join(output_dir, split, 'positive', f'pos_{i}.jpg'))
+            i += 1
+            pbar.update(1)
+        pbar.close()
+    else:
+        print(f"Позитивні зразки вже існують ({pos_existing}). Пропускаємо.")
 
-print("Датасет успішно згенеровано!")
+    if neg_existing < total_negative:
+        i    = neg_existing
+        pbar = tqdm(total=total_negative - neg_existing, desc='Generating negative samples')
+
+        while i < total_negative:
+            bg_path = random.choice(background_files)
+            try:
+                bg = Image.open(bg_path).convert('RGB')
+            except Exception:
+                continue
+
+            crop_w, crop_h = 300, 300
+            if bg.width > crop_w and bg.height > crop_h:
+                cx = random.randint(0, bg.width - crop_w)
+                cy = random.randint(0, bg.height - crop_h)
+                bg = bg.crop((cx, cy, cx + crop_w, cy + crop_h))
+
+            split = get_split_name(i, total_negative)
+            bg.save(os.path.join(output_dir, split, 'negative', f'neg_{i}.jpg'))
+            i += 1
+            pbar.update(1)
+        pbar.close()
+    else:
+        print(f"Негативні зразки вже існують ({neg_existing}). Пропускаємо.")
+
+    print("Датасет успішно згенеровано!")
 
 # -- Опціонально монтуємо Google Drive та генеруємо датасет звідти ---
 # drive.mount('/content/drive')
@@ -244,7 +284,6 @@ background_files = [
 total_positive = 1000
 total_negative = 1000
 split_ratios   = {'train': 0.7, 'val': 0.15, 'test': 0.15}
-
 
 def get_split_name(idx, total):
     """Визначає, до якого split належить зображення за індексом."""
@@ -318,7 +357,7 @@ pbar.close()
 # КРОК 2. Готуємо дані (ImageDataGenerator + train/val/test)
 # ============================================================
 
-dataset_dir = '/content/dataset'
+dataset_dir = 'dataset'
 img_size    = (150, 150)
 batch_size  = 32
 
@@ -413,23 +452,41 @@ def build_xception(input_shape=(150, 150, 3), num_classes=1):
     )
     return model
 
+# ── Завантаження моделі якщо вона вже збережена ───────────────
 
-model = build_xception()
-model.summary()
+MODEL_DIR = 'model'
+os.makedirs(MODEL_DIR, exist_ok=True)
 
-early_stop = EarlyStopping(
-    monitor='val_loss',
-    patience=7,
-    restore_best_weights=True,
-    verbose=1
-)
+# Шукаємо будь-який .keras файл у папці model/
+existing_model_files = sorted(glob.glob(os.path.join(MODEL_DIR, 'xception_*.keras')))
 
-history = model.fit(
-    train_generator,
-    validation_data=val_generator,
-    epochs=30,
-    callbacks=[early_stop]
-)
+if existing_model_files:
+    # Беремо найновіший файл (сортування за іменем → останній timestamp)
+    model_load_path = existing_model_files[-1]
+    print(f"Знайдено збережену модель: {model_load_path}")
+    print("Завантажуємо модель, навчання пропущено.")
+    model = tf.keras.models.load_model(model_load_path)
+    model.summary()
+    history = None   # history недоступна при завантаженні
+else:
+    print("Збереженої моделі не знайдено. Починаємо навчання...")
+    model = build_xception()
+    model.summary()
+
+    early_stop = EarlyStopping(
+        monitor='val_loss',
+        patience=7,
+        restore_best_weights=True,
+        verbose=1
+    )
+
+    history = model.fit(
+        train_generator,
+        validation_data=val_generator,
+        epochs=30,
+        callbacks=[early_stop]
+    )
+# ── Кінець завантаження моделі ──────────────────────────────
 
 # Epoch 1/30  ...  Epoch 30/30
 # Restoring model weights from the end of the best epoch: 27.
@@ -456,16 +513,9 @@ print(f"  Mean: {test_probs.mean():.4f}, Std: {test_probs.std():.4f}")
 #   Min: 0.0001, Max: 1.0000
 #   Mean: 0.5149, Std: 0.4650
 
-
 # ============================================================
 # КРОК 5. Матриця помилок + accuracy, precision, recall, F-Score
 # ============================================================
-
-from sklearn.metrics import (
-    confusion_matrix, classification_report,
-    accuracy_score, precision_score, recall_score, f1_score
-)
-import seaborn as sns
 
 class_names = list(train_generator.class_indices.keys())  # ['negative', 'positive']
 
@@ -516,28 +566,31 @@ plt.grid(alpha=0.3)
 plt.savefig('test_predictions.png')
 plt.show()
 
-# --- Графіки точності та втрат ---
-plt.figure(figsize=(12, 5))
+# --- Графіки точності та втрат (лише якщо модель щойно навчалась) ---
+if history is not None:
+    plt.figure(figsize=(12, 5))
 
-plt.subplot(1, 2, 1)
-plt.plot(history.history['accuracy'],     label='Train')
-plt.plot(history.history['val_accuracy'], label='Validation')
-plt.title('Model Accuracy')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.legend()
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'],     label='Train')
+    plt.plot(history.history['val_accuracy'], label='Validation')
+    plt.title('Model Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
 
-plt.subplot(1, 2, 2)
-plt.plot(history.history['loss'],     label='Train')
-plt.plot(history.history['val_loss'], label='Validation')
-plt.title('Model Loss')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend()
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'],     label='Train')
+    plt.plot(history.history['val_loss'], label='Validation')
+    plt.title('Model Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
 
-plt.tight_layout()
-plt.savefig('training_history.png')
-plt.show()
+    plt.tight_layout()
+    plt.savefig('training_history.png')
+    plt.show()
+else:
+    print("Графіки навчання недоступні (модель завантажена з файлу).")
 
 
 # ============================================================
@@ -579,17 +632,19 @@ plt.show()
 # КРОК 8. Зберігаємо модель
 # ============================================================
 
-import datetime
-
 now           = datetime.datetime.now()
 timestamp     = now.strftime("%Y%m%d_%H%M%S")
-base_path     = '/content/drive/MyDrive/'
+base_path     = 'model'
 file_name     = f'xception_{timestamp}.keras'
-model_save_path = base_path + file_name
+model_save_path = os.path.join(base_path, file_name)
 
-model.save(model_save_path)
-print(f"Модель успішно збережено за шляхом: {model_save_path}")
-# Модель успішно збережено за шляхом: /content/drive/MyDrive/xception_20250413_113037.keras
+# ── ЗМІНА 3: зберігаємо лише якщо модель щойно навчалась ───────────────
+if history is not None:
+    model.save(model_save_path)
+    print(f"Модель успішно збережено за шляхом: {model_save_path}")
+else:
+    print(f"Модель завантажена з файлу, повторне збереження пропущено.")
+# ── кінець ЗМІНИ 3 ─────────────────────────────────────────────────────
 
 # ============================================================
 # КРОК 9. Тестуємо модель на відео
@@ -697,9 +752,6 @@ else:
 #   C) Порівняння результатів
 # ============================================================
 
-import time
-from scipy.ndimage import median_filter
-
 # ---- A) ПОФРЕЙМОВА (baseline) vs. БАТЧЕВА обробка ----
 
 cap_a = cv2.VideoCapture(VIDEO_PATH)
@@ -788,7 +840,6 @@ def extract_intervals(binary_mask, fps_val):
                      start / fps_val, (len(binary_mask) - 1) / fps_val))
     return segs
 
-
 frames_axis = list(range(total_frames))
 segs_raw    = extract_intervals(binary_raw,    fps)
 segs_smooth = extract_intervals(binary_filled, fps)
@@ -800,7 +851,6 @@ print(f"  Медіана + заповнення ({GAP_FILL}): {len(segs_smooth)}
 print("\nСегменти після пост-обробки:")
 for s in segs_smooth:
     print(f"  Кадри {s[0]:4d}–{s[1]:4d}  →  {s[2]:.2f}s – {s[3]:.2f}s")
-
 
 # ---- C) ПОРІВНЯЛЬНИЙ ГРАФІК ----
 
@@ -837,7 +887,6 @@ plt.savefig('video_postprocessing_comparison.png')
 plt.show()
 
 # ---- Зведена таблиця ----
-import pandas as pd
 
 df_compare = pd.DataFrame({
     'Метод'         : ['Покадрово (без пост-обробки)',
