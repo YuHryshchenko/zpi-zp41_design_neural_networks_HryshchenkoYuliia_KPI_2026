@@ -15,12 +15,29 @@
 # Демонструє базову роботу з Python / matplotlib у Kaggle Notebook
 # ══════════════════════════════════════════════════════════════════════════════
 
+import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, SimpleRNN, Input, Add
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
+
+# --- 1.1 Визначення та налаштування середовища ---
+CURRENT_LAB = "lab02"
+
+def is_kaggle():
+    return "KAGGLE_KERNEL_RUN_TYPE" in os.environ
+
+if is_kaggle():
+    print("Running on Kaggle")
+    # Set Kaggle-specific paths
+    BASE_DIR = ""
+else:
+    print("Running locally")
+    # Set local paths
+    ABSOLUTE_PATH = os.getcwd()
+    BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
 
 # Функція для генерації навчальних даних
 def generate_data(n_samples=1000):

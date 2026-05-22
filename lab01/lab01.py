@@ -16,12 +16,28 @@
 # Демонструє базову роботу з Python / matplotlib у Kaggle Notebook
 # ══════════════════════════════════════════════════════════════════════════════
 
-import matplotlib
+import os
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 
-matplotlib.use("Agg")           # для запуску без дисплея (сервер/CI)
+# matplotlib.use("Agg")           # для запуску без дисплея (сервер/CI)
+
+# --- 1.1 Визначення та налаштування середовища ---
+CURRENT_LAB = "lab01"
+
+def is_kaggle():
+    return "KAGGLE_KERNEL_RUN_TYPE" in os.environ
+
+if is_kaggle():
+    print("Running on Kaggle")
+    # Set Kaggle-specific paths
+    BASE_DIR = ""
+else:
+    print("Running locally")
+    # Set local paths
+    ABSOLUTE_PATH = os.getcwd()
+    BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
 
 # Привітання у Kaggle
 print("Привіт, Kaggle!")

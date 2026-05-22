@@ -15,9 +15,28 @@ import kaggle
 # ==========================================
 # ПОСТІЙНІ НАЛАШТУВАННЯ (КОНСТАНТИ)
 # ==========================================
-TRAIN_DIR = "dataset/train"
-VAL_DIR = "dataset/validation"
-MODEL_FILE_NAME = "my_custom_inception_model.h5"
+
+# --- 1.1 Визначення та налаштування середовища ---
+CURRENT_LAB = "lab05"
+
+def is_kaggle():
+    return "KAGGLE_KERNEL_RUN_TYPE" in os.environ
+
+if is_kaggle():
+    print("Running on Kaggle")
+    # Set Kaggle-specific paths
+    BASE_DIR = ""
+else:
+    print("Running locally")
+    # Set local paths
+    ABSOLUTE_PATH = os.getcwd()
+    BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
+
+TRAIN_DIR = BASE_DIR + "dataset/train"
+VAL_DIR = BASE_DIR + "dataset/validation"
+TRAIN_SOURCE_DIR = BASE_DIR + "training_set/training_set"
+VALIDATION_SOURCE_DIR = BASE_DIR + "test_set/test_set"
+MODEL_FILE_NAME = BASE_DIR + "my_custom_inception_model.h5"
 
 # ==========================================
 # 1. ФУНКЦІЇ ДЛЯ ПІДГОТОВКИ ТА ЗАВАНТАЖЕННЯ ДАНИХ
@@ -31,9 +50,6 @@ def download_and_prepare_dataset(dataset_base_dir="dataset", sample_train_size=3
     print("Аутентифікація в Kaggle та завантаження датасету...")
     kaggle.api.authenticate()
     kaggle.api.dataset_download_files(dataset="tongpython/cat-and-dog", path=".", unzip=True)
-
-    TRAIN_SOURCE_DIR = "training_set/training_set"
-    VALIDATION_SOURCE_DIR = "test_set/test_set"
 
     train_cats = os.path.join(dataset_base_dir, "train/cats")
     train_dogs = os.path.join(dataset_base_dir, "train/dogs")
@@ -103,7 +119,6 @@ def create_data_generators(train_dir, val_dir, target_size=(299, 299), batch_siz
 
     return train_generator, val_generator
 
-
 # ==========================================
 # 2. АРХІТЕКТУРНІ БЛОКИ (INCEPTION-V3 & MINI)
 # ==========================================
@@ -113,7 +128,6 @@ def conv2d_bn(x, filters, num_row, num_col, padding="same", strides=(1, 1)):
     x = layers.BatchNormalization()(x)
     x = layers.Activation("relu")(x)
     return x
-
 
 def build_custom_inception_v3(input_shape=(299, 299, 3), num_classes=1):
     """Пошарова кастомна реалізація архітектури Inception-v3."""
@@ -187,7 +201,6 @@ def build_mini_inception(input_shape=(150, 150, 3), num_classes=1):
     outputs = layers.Dense(num_classes, activation="sigmoid")(x)
 
     return Model(img_input, outputs, name="mini_inception")
-
 
 # ==========================================
 # 3. ФУНКЦІЇ НАВЧАННЯ ТА ОЦІНКИ МОДЕЛІ

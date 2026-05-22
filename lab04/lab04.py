@@ -37,6 +37,22 @@ from tensorflow.keras.layers import (
     GlobalAveragePooling2D as GAP
 )
 
+# --- 1.1 Визначення та налаштування середовища ---
+CURRENT_LAB = "lab04"
+
+def is_kaggle():
+    return "KAGGLE_KERNEL_RUN_TYPE" in os.environ
+
+if is_kaggle():
+    print("Running on Kaggle")
+    # Set Kaggle-specific paths
+    BASE_DIR = ""
+else:
+    print("Running locally")
+    # Set local paths
+    ABSOLUTE_PATH = os.getcwd()
+    BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
+
 # Встановлюємо kaggle
 # ! pip install kaggle
 

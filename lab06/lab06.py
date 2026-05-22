@@ -39,16 +39,35 @@ from sklearn.metrics import (
 # генерація фонових зображень і датасету
 # ============================================================
 
-# --- 1.1 Завантаження архіву з логотипами ---
+# --- 1.1 Визначення та налаштування середовища ---
+CURRENT_LAB = "lab08"
+
+def is_kaggle():
+    return "KAGGLE_KERNEL_RUN_TYPE" in os.environ
+
+if is_kaggle():
+    print("Running on Kaggle")
+    # Set Kaggle-specific paths
+    BASE_DIR = ""
+else:
+    print("Running locally")
+    # Set local paths
+    ABSOLUTE_PATH = os.getcwd()
+    BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
+
+# --- 1.2 Завантаження архіву з логотипами ---
 GITHUB_URL_BASE = "https://github.com/YuHryshchenko/zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026/raw/main/lab06/"
 LOGOS_GITHUB_URL = GITHUB_URL_BASE + "raw-img.zip"
 VIDEO_GITHUB_URL = GITHUB_URL_BASE + "logo_video.mp4"
-VIDEO_DIR  = 'video'
-EXTRACT_DIR = "raw-img"
-VIDEO_PATH  = 'logo_video.mp4'
-ZIP_PATH = "raw_img.zip"
+TOP_FRAMES_DIR = BASE_DIR + 'top_detections'
+MODEL_DIR = BASE_DIR + 'model'
+DATASET_DIR = BASE_DIR + 'dataset'
+VIDEO_DIR  = BASE_DIR + 'video'
+EXTRACT_DIR = BASE_DIR + "raw-img"
+VIDEO_PATH  = BASE_DIR + 'logo_video.mp4'
+ZIP_PATH = BASE_DIR + "raw_img.zip"
 
-# --- 1.2 Автоматичне завантаження фонових зображень ---
+# --- 1.3 Автоматичне завантаження фонових зображень ---
 if not os.path.exists(EXTRACT_DIR):
     print("Завантаження архіву з логотипами GitHub...")
     urllib.request.urlretrieve(LOGOS_GITHUB_URL, ZIP_PATH)
@@ -60,7 +79,7 @@ if not os.path.exists(EXTRACT_DIR):
 else:
     print("Архів з логотипами вже завантажено.")
 
-# --- 1.3 Автоматичне завантаження відео ---
+# --- 1.4 Автоматичне завантаження відео ---
 if not os.path.exists(VIDEO_DIR):
     print("Завантаження відео...")
     urllib.request.urlretrieve(VIDEO_GITHUB_URL, VIDEO_PATH)
@@ -68,9 +87,9 @@ if not os.path.exists(VIDEO_DIR):
 else:
     print("Відео вже завантажено.")
 
-# --- 2. Автоматичне завантаження фонових зображень ---
-background_dir = os.path.join(EXTRACT_DIR, 'backgrounds')
-os.makedirs(background_dir, exist_ok=True)
+# --- 1.5 Автоматичне завантаження фонових зображень ---
+BACKGROUND_DIR = os.path.join(EXTRACT_DIR, 'backgrounds')
+os.makedirs(BACKGROUND_DIR, exist_ok=True)
 
 # Використовуємо сервіс Picsum для стабільного отримання 5 різних фонів розміром 800x600
 bg_urls = [
@@ -83,7 +102,7 @@ bg_urls = [
 
 print("Перевірка та завантаження фонових зображень...")
 for i, url in enumerate(bg_urls):
-    bg_file_path = os.path.join(background_dir, f"bg_{i}.jpg")
+    bg_file_path = os.path.join(BACKGROUND_DIR, f"bg_{i}.jpg")
     if not os.path.exists(bg_file_path):
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
@@ -92,18 +111,18 @@ for i, url in enumerate(bg_urls):
         except Exception as e:
             print(f"Не вдалося завантажити фон {url}: {e}")
 
-# --- Налаштування шляхів ---
-logo_dir   = os.path.join(EXTRACT_DIR, 'raw-img/toyota')
-output_dir = './dataset'
+# --- 1.6 Налаштування шляхів ---
+LOGO_DIR   = os.path.join(EXTRACT_DIR, 'raw-img/toyota')
+OUTPUT_DIR = './dataset'
 
 splits  = ['train', 'val', 'test']
 classes = ['positive', 'negative']
 
 for split in splits:
     for cls in classes:
-        os.makedirs(os.path.join(output_dir, split, cls), exist_ok=True)
+        os.makedirs(os.path.join(OUTPUT_DIR, split, cls), exist_ok=True)
 
-# --- Аугментація логотипу ---
+# --- 1.7 Аугментація логотипу ---
 def augment_logo(logo):
     """Випадковий поворот, масштабування та прозорість логотипу."""
     angle = random.uniform(-30, 30)
@@ -117,9 +136,9 @@ def augment_logo(logo):
     logo.putalpha(int(255 * alpha))
     return logo
 
-# --- Збираємо списки файлів ---
-logo_files = [os.path.join(logo_dir, f) for f in os.listdir(logo_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
-background_files = [os.path.join(background_dir, f) for f in os.listdir(background_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
+# --- 1.8 Збираємо списки файлів ---
+logo_files = [os.path.join(LOGO_DIR, f) for f in os.listdir(LOGO_DIR) if f.endswith(('.png', '.jpg', '.jpeg'))]
+background_files = [os.path.join(BACKGROUND_DIR, f) for f in os.listdir(BACKGROUND_DIR) if f.endswith(('.png', '.jpg', '.jpeg'))]
 
 # Перевірка на всякий випадок, щоб уникнути помилки IndexError, якщо картинки не завантажаться
 if not background_files:
@@ -138,7 +157,7 @@ def get_split_name(idx, total):
     elif idx < test_thresh: return 'val'
     else: return 'test'
 
-# ── Підрахунок вже наявних зображень ──────────────────────────
+# ── 1.9 Підрахунок вже наявних зображень ──────────────────────────
 def count_dataset_images(output_dir, splits, classes):
     """Повертає загальну кількість вже наявних зображень у датасеті."""
     total = 0
@@ -150,7 +169,7 @@ def count_dataset_images(output_dir, splits, classes):
                                if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
     return total
 
-existing_images = count_dataset_images(output_dir, splits, classes)
+existing_images = count_dataset_images(OUTPUT_DIR, splits, classes)
 expected_images = total_positive + total_negative   # 2000
 
 if existing_images >= expected_images:
@@ -158,15 +177,15 @@ if existing_images >= expected_images:
 else:
     print(f"Знайдено {existing_images}/{expected_images} зображень. Починаємо генерацію...")
 
-    # --- Генерація позитивних зразків (логотип на фоні) ---
+    # --- 1.10 Генерація позитивних зразків (логотип на фоні) ---
     # Визначаємо, скільки вже є в кожній split/class, щоб не перезаписувати
     pos_existing = sum(
-        len(os.listdir(os.path.join(output_dir, s, 'positive')))
-        for s in splits if os.path.isdir(os.path.join(output_dir, s, 'positive'))
+        len(os.listdir(os.path.join(OUTPUT_DIR, s, 'positive')))
+        for s in splits if os.path.isdir(os.path.join(OUTPUT_DIR, s, 'positive'))
     )
     neg_existing = sum(
-        len(os.listdir(os.path.join(output_dir, s, 'negative')))
-        for s in splits if os.path.isdir(os.path.join(output_dir, s, 'negative'))
+        len(os.listdir(os.path.join(OUTPUT_DIR, s, 'negative')))
+        for s in splits if os.path.isdir(os.path.join(OUTPUT_DIR, s, 'negative'))
     )
 
     if pos_existing < total_positive:
@@ -203,7 +222,7 @@ else:
             bg.paste(logo, (x, y), logo)
 
             split = get_split_name(i, total_positive)
-            bg.save(os.path.join(output_dir, split, 'positive', f'pos_{i}.jpg'))
+            bg.save(os.path.join(OUTPUT_DIR, split, 'positive', f'pos_{i}.jpg'))
             i += 1
             pbar.update(1)
         pbar.close()
@@ -228,7 +247,7 @@ else:
                 bg = bg.crop((cx, cy, cx + crop_w, cy + crop_h))
 
             split = get_split_name(i, total_negative)
-            bg.save(os.path.join(output_dir, split, 'negative', f'neg_{i}.jpg'))
+            bg.save(os.path.join(OUTPUT_DIR, split, 'negative', f'neg_{i}.jpg'))
             i += 1
             pbar.update(1)
         pbar.close()
@@ -255,130 +274,68 @@ else:
 #        os.makedirs(os.path.join(output_dir, split, cls), exist_ok=True)
 
 # ----------------- Аугментація логотипу -----------------------------
-def augment_logo(logo):
-    """Випадковий поворот, масштабування та прозорість логотипу."""
-    angle = random.uniform(-30, 30)
-    logo  = logo.rotate(angle, expand=True)
+# def augment_logo(logo):
+#     """Випадковий поворот, масштабування та прозорість логотипу."""
+#     angle = random.uniform(-30, 30)
+#     logo  = logo.rotate(angle, expand=True)
 
-    scale = random.uniform(0.5, 1.5)
-    w, h  = logo.size
-    logo  = logo.resize((int(w * scale), int(h * scale)))
+#     scale = random.uniform(0.5, 1.5)
+#     w, h  = logo.size
+#     logo  = logo.resize((int(w * scale), int(h * scale)))
 
-    alpha = random.uniform(0.5, 1.0)
-    logo.putalpha(int(255 * alpha))
-    return logo
+#     alpha = random.uniform(0.5, 1.0)
+#     logo.putalpha(int(255 * alpha))
+#     return logo
 
 # --------------------- Збираємо списки файлів -------------------------
-logo_files = [
-    os.path.join(logo_dir, f)
-    for f in os.listdir(logo_dir)
-    if f.endswith(('.png', '.jpg', '.jpeg'))
-]
+# logo_files = [
+#     os.path.join(logo_dir, f)
+#     for f in os.listdir(logo_dir)
+#     if f.endswith(('.png', '.jpg', '.jpeg'))
+# ]
 
-background_files = [
-    os.path.join(background_dir, f)
-    for f in os.listdir(background_dir)
-    if f.endswith(('.png', '.jpg', '.jpeg'))
-]
+# background_files = [
+#     os.path.join(background_dir, f)
+#     for f in os.listdir(background_dir)
+#     if f.endswith(('.png', '.jpg', '.jpeg'))
+# ]
 
-total_positive = 1000
-total_negative = 1000
-split_ratios   = {'train': 0.7, 'val': 0.15, 'test': 0.15}
-
-def get_split_name(idx, total):
-    """Визначає, до якого split належить зображення за індексом."""
-    val_thresh  = int(total * split_ratios['train'])
-    test_thresh = int(total * (split_ratios['train'] + split_ratios['val']))
-    if idx < val_thresh:
-        return 'train'
-    elif idx < test_thresh:
-        return 'val'
-    else:
-        return 'test'
-
-# ------ Генерація позитивних зразків (логотип на фоні) ------
-i    = 0
-pbar = tqdm(total=total_positive, desc='Generating positive samples')
-
-while i < total_positive:
-    bg_path   = random.choice(background_files)
-    logo_path = random.choice(logo_files)
-    try:
-        bg   = Image.open(bg_path).convert('RGB')
-        logo = Image.open(logo_path).convert('RGBA')
-    except Exception as e:
-        print(f"Error opening image: {e}")
-        continue
-
-    logo = augment_logo(logo)
-
-    if logo.width > bg.width or logo.height > bg.height:
-        logo.thumbnail((bg.width, bg.height))
-
-    max_x = bg.width  - logo.width
-    max_y = bg.height - logo.height
-    if max_x < 0 or max_y < 0:
-        continue
-
-    x = random.randint(0, max_x)
-    y = random.randint(0, max_y)
-    bg.paste(logo, (x, y), logo)
-
-    split = get_split_name(i, total_positive)
-    bg.save(os.path.join(output_dir, split, 'positive', f'pos_{i}.jpg'))
-    i += 1
-    pbar.update(1)
-
-pbar.close()
-
-# ------ Генерація негативних зразків (тільки фон) ------
-i    = 0
-pbar = tqdm(total=total_negative, desc='Generating negative samples')
-
-while i < total_negative:
-    bg_path = random.choice(background_files)
-    try:
-        bg = Image.open(bg_path).convert('RGB')
-    except Exception as e:
-        print(f"Error opening background image: {e}")
-        continue
-
-    split = get_split_name(i, total_negative)
-    bg.save(os.path.join(output_dir, split, 'negative', f'neg_{i}.jpg'))
-    i += 1
-    pbar.update(1)
-
-pbar.close()
-
-# Generating positive samples: 100%|██████████| 1000/1000 [02:51<00:00, 5.84it/s]
-# Generating negative samples: 100%|██████████| 1000/1000 [00:00<00:00, 1433.40it/s]
+# def get_split_name(idx, total):
+#     """Визначає, до якого split належить зображення за індексом."""
+#     val_thresh  = int(total * split_ratios['train'])
+#     test_thresh = int(total * (split_ratios['train'] + split_ratios['val']))
+#     if idx < val_thresh:
+#         return 'train'
+#     elif idx < test_thresh:
+#         return 'val'
+#     else:
+#         return 'test'
 
 # ============================================================
 # КРОК 2. Готуємо дані (ImageDataGenerator + train/val/test)
 # ============================================================
 
-dataset_dir = 'dataset'
 img_size    = (150, 150)
 batch_size  = 32
 
 datagen = ImageDataGenerator(rescale=1. / 255)
 
 train_generator = datagen.flow_from_directory(
-    directory=os.path.join(dataset_dir, 'train'),
+    directory=os.path.join(DATASET_DIR, 'train'),
     target_size=img_size,
     batch_size=batch_size,
     class_mode='binary'
 )
 
 val_generator = datagen.flow_from_directory(
-    directory=os.path.join(dataset_dir, 'val'),
+    directory=os.path.join(DATASET_DIR, 'val'),
     target_size=img_size,
     batch_size=batch_size,
     class_mode='binary'
 )
 
 test_generator = datagen.flow_from_directory(
-    directory=os.path.join(dataset_dir, 'test'),
+    directory=os.path.join(DATASET_DIR, 'test'),
     target_size=img_size,
     batch_size=batch_size,
     class_mode='binary',
@@ -452,10 +409,24 @@ def build_xception(input_shape=(150, 150, 3), num_classes=1):
     )
     return model
 
+def remove_folder_contents(folder):
+    for the_file in os.listdir(folder):
+        file_path = os.path.join(folder, the_file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                remove_folder_contents(file_path)
+                os.rmdir(file_path)
+        except Exception as e:
+            print(e)
+
 # ── Завантаження моделі якщо вона вже збережена ───────────────
 
-MODEL_DIR = 'model'
 os.makedirs(MODEL_DIR, exist_ok=True)
+
+# ──────── Якщо хочемо видалити і перетренувати усі моделі ──────────────
+# remove_folder_contents(MODEL_DIR)
 
 # Шукаємо будь-який .keras файл у папці model/
 existing_model_files = sorted(glob.glob(os.path.join(MODEL_DIR, 'xception_*.keras')))
@@ -638,19 +609,19 @@ base_path     = 'model'
 file_name     = f'xception_{timestamp}.keras'
 model_save_path = os.path.join(base_path, file_name)
 
-# ── ЗМІНА 3: зберігаємо лише якщо модель щойно навчалась ───────────────
+# ──────────── Зберігаємо лише якщо модель щойно навчалась ───────────────
 if history is not None:
     model.save(model_save_path)
     print(f"Модель успішно збережено за шляхом: {model_save_path}")
 else:
     print(f"Модель завантажена з файлу, повторне збереження пропущено.")
-# ── кінець ЗМІНИ 3 ─────────────────────────────────────────────────────
+# ── кінець Збереження ──────────────────────────────────────────────────
 
 # ============================================================
 # КРОК 9. Тестуємо модель на відео
 #
-# Результат: графік впевненості по кадрах +
-#            вивід часових інтервалів появи логотипу
+# Результат: графік впевненості по кадрах, вивід часових 
+# інтервалів появи логотипу, та збереження ТОП-кадрів
 # ============================================================
 
 cap = cv2.VideoCapture(VIDEO_PATH)
@@ -665,9 +636,14 @@ frame_predictions  = []
 frame_numbers      = []
 frame_count        = 0
 
+# Словник для збереження оригінальних кадрів (щоб потім їх вивести)
+original_frames_dict = {}
+
 def preprocess_frame(frame):
-    """Масштабуємо кадр до (150×150) і нормалізуємо до [0, 1]."""
-    resized = cv2.resize(frame, (150, 150))
+    """Конвертуємо BGR в RGB, масштабуємо до (150×150) і нормалізуємо до [0, 1]."""
+    # ВИПРАВЛЕННЯ: OpenCV читає відео в BGR, а модель навчалась на RGB (PIL)
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    resized = cv2.resize(rgb_frame, (150, 150))
     return resized.astype(np.float32) / 255.0
 
 def process_batch(batch_frames, batch_ids):
@@ -684,6 +660,10 @@ while True:
     ret, frame = cap.read()
     if not ret:
         break
+
+    # Зберігаємо оригінальний кадр в RGB для красивої візуалізації пізніше
+    rgb_original = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    original_frames_dict[frame_count] = rgb_original
 
     frames.append(preprocess_frame(frame))
     frames_ids.append(frame_count)
@@ -703,7 +683,8 @@ cap.release()
 # --- Графік передбачень по кадрах ---
 plt.figure(figsize=(12, 6))
 plt.plot(frame_numbers, frame_predictions, label='Confidence', color='blue')
-plt.axhline(0.5, color='red', linestyle='--', label='Threshold = 0.5')
+CONFIDENCE_THRESHOLD = 0.45
+plt.axhline(CONFIDENCE_THRESHOLD, color='red', linestyle='--', label='Threshold = ' + str(CONFIDENCE_THRESHOLD))
 plt.xlabel('Frame Number')
 plt.ylabel('Prediction Score')
 plt.title('Model Predictions Over Video Frames')
@@ -714,8 +695,7 @@ plt.savefig('video_predictions.png')
 plt.show()
 
 # --- Визначаємо часові інтервали появи логотипу ---
-THRESHOLD = 0.5
-logo_detected = [p >= THRESHOLD for p in frame_predictions]
+logo_detected = [p >= CONFIDENCE_THRESHOLD for p in frame_predictions]
 
 intervals = []
 in_segment = False
@@ -738,11 +718,44 @@ if intervals:
     for start_f, end_f in intervals:
         t_start = start_f / fps
         t_end   = end_f   / fps
-        print(f"  Кадри {start_f:4d}–{end_f:4d}  →  "
-              f"{t_start:.2f}s – {t_end:.2f}s")
+        print(f"  Кадри {start_f:4d}–{end_f:4d}  →  {t_start:.2f}s – {t_end:.2f}s")
 else:
-    print("  Логотип не виявлено жодного разу.")
+    print("  Логотип не виявлено жодного разу (впевненість не перевищила поріг).")
 
+# ============================================================
+# ДОДАТОК ДО КРОКУ 9: ЗБЕРЕЖЕННЯ ТА ВИВІД ТОП-КАДРІВ
+# ============================================================
+print("\n=== ТОП-5 КАДРІВ З НАЙВИЩОЮ ЙМОВІРНІСТЮ ЛОГОТИПУ ===")
+
+# Створюємо список кортежів (номер_кадру, впевненість) і сортуємо за спаданням
+frame_scores = list(zip(frame_numbers, frame_predictions))
+frame_scores.sort(key=lambda x: x[1], reverse=True)
+
+top_n = 5
+top_frames = frame_scores[:top_n]
+
+# Створюємо папку для збереження знайдених кадрів
+os.makedirs(TOP_FRAMES_DIR, exist_ok=True)
+
+plt.figure(figsize=(15, 10))
+for i, (f_num, score) in enumerate(top_frames):
+    img_rgb = original_frames_dict[f_num]
+    
+    # Збереження кадру на диск (конвертуємо назад у BGR для cv2.imwrite)
+    save_path = os.path.join(TOP_FRAMES_DIR, f'frame_{f_num:04d}_score_{score:.3f}.jpg')
+    cv2.imwrite(save_path, cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR))
+    
+    # Вивід кадру у зошит / консоль
+    plt.subplot(1, top_n, i + 1)
+    plt.imshow(img_rgb)
+    plt.title(f"Кадр: {f_num}\nВпевненість: {score*100:.1f}%")
+    plt.axis('off')
+
+plt.tight_layout()
+plt.savefig('top_detections_summary.png')
+plt.show()
+
+print(f"Топ-кадри успішно збережено у папку '{TOP_FRAMES_DIR}'!")
 
 # ============================================================
 # ДОДАТКОВЕ ЗАВДАННЯ (+1 бал)
@@ -791,7 +804,6 @@ print(f"  Покадрово : {t_single:.2f}s  ({total_frames / t_single:.1f} f
 print(f"  Батч ({BATCH}) : {t_batch:.2f}s  ({total_frames / t_batch:.1f} fps)")
 print(f"  Прискорення: {t_single / t_batch:.2f}x")
 
-
 # ---- B) ПОСТ-ОБРОБКА результатів ----
 
 preds_arr = np.array(preds_batch)
@@ -802,8 +814,8 @@ preds_smooth = median_filter(preds_arr, size=MEDIAN_WIN)
 
 # 2. Заповнення коротких прогалин (< GAP_FILL кадрів) між позитивними сегментами
 GAP_FILL     = 15   # кадрів
-binary_raw   = (preds_arr    >= THRESHOLD).astype(int)
-binary_smooth = (preds_smooth >= THRESHOLD).astype(int)
+binary_raw   = (preds_arr    >= CONFIDENCE_THRESHOLD).astype(int)
+binary_smooth = (preds_smooth >= CONFIDENCE_THRESHOLD).astype(int)
 
 # Заповнення прогалин у двійковій масці
 def fill_gaps(binary_mask, max_gap):
@@ -823,7 +835,6 @@ def fill_gaps(binary_mask, max_gap):
     return filled
 
 binary_filled = fill_gaps(binary_smooth, GAP_FILL)
-
 
 def extract_intervals(binary_mask, fps_val):
     """Повертає список часових інтервалів (кадр_початок, кадр_кінець, t_start, t_end)."""
@@ -858,8 +869,8 @@ fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
 
 axes[0].plot(frames_axis, preds_arr, color='steelblue', linewidth=0.8,
              label='Без обробки')
-axes[0].axhline(THRESHOLD, color='red', linestyle='--', alpha=0.7,
-                label=f'Поріг = {THRESHOLD}')
+axes[0].axhline(CONFIDENCE_THRESHOLD, color='red', linestyle='--', alpha=0.7,
+                label=f'Поріг = {CONFIDENCE_THRESHOLD}')
 axes[0].set_ylabel('Впевненість')
 axes[0].set_title('Передбачення: без пост-обробки')
 axes[0].legend(fontsize=8)
@@ -867,7 +878,7 @@ axes[0].grid(alpha=0.3)
 
 axes[1].plot(frames_axis, preds_smooth, color='darkorange', linewidth=0.8,
              label=f'Медіана (вікно={MEDIAN_WIN})')
-axes[1].axhline(THRESHOLD, color='red', linestyle='--', alpha=0.7)
+axes[1].axhline(CONFIDENCE_THRESHOLD, color='red', linestyle='--', alpha=0.7)
 axes[1].set_ylabel('Впевненість')
 axes[1].set_title('Після медіанного згладжування')
 axes[1].legend(fontsize=8)

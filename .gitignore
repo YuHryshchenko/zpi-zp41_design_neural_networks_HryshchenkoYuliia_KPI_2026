@@ -6,3 +6,7 @@ __pycache__/
 lab*/logs
 raw-img
 raw-img/*
+dataset
+dataset/*
+top_detections
+top_detections/*
