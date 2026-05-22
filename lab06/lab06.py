@@ -9,12 +9,20 @@
 # ============================================================
 
 import os
+import cv2
 import random
-import urllib.request
 import zipfile
+import numpy as np
+import urllib.request
 from PIL import Image
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 # from google.colab import drive
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 # ============================================================
 # КРОК 1. Завантаження даних з GitHub та автоматична 
@@ -32,24 +40,37 @@ import zipfile
 from PIL import Image
 from tqdm import tqdm
 
-# --- 1. Завантаження архіву з логотипами ---
-github_url = "https://github.com/YuHryshchenko/zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026/raw/main/lab06/raw-img.zip"
-zip_path = "raw_img.zip"
-extract_dir = "raw-img"
+# --- 1.1 Завантаження архіву з логотипами ---
+GITHUB_URL_BASE = "https://github.com/YuHryshchenko/zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026/raw/main/lab06/"
+LOGOS_GITHUB_URL = GITHUB_URL_BASE + "raw-img.zip"
+VIDEO_GITHUB_URL = GITHUB_URL_BASE + "logo_video.mp4"
+VIDEO_DIR  = 'video'
+EXTRACT_DIR = "raw-img"
+VIDEO_PATH  = 'logo_video.mp4'
+ZIP_PATH = "raw_img.zip"
 
-if not os.path.exists(extract_dir):
+# --- 1.2 Автоматичне завантаження фонових зображень ---
+if not os.path.exists(EXTRACT_DIR):
     print("Завантаження архіву з логотипами GitHub...")
-    urllib.request.urlretrieve(github_url, zip_path)
+    urllib.request.urlretrieve(LOGOS_GITHUB_URL, ZIP_PATH)
     
     print("Розпакування архіву...")
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_dir)
+    with zipfile.ZipFile(ZIP_PATH, 'r') as zip_ref:
+        zip_ref.extractall(EXTRACT_DIR)
     print("Розпакування завершено!")
 else:
     print("Архів з логотипами вже завантажено.")
 
+# --- 1.3 Автоматичне завантаження відео ---
+if not os.path.exists(VIDEO_DIR):
+    print("Завантаження відео...")
+    urllib.request.urlretrieve(VIDEO_GITHUB_URL, VIDEO_PATH)
+    print("Відео завантажено!")
+else:
+    print("Відео вже завантажено.")
+
 # --- 2. Автоматичне завантаження фонових зображень ---
-background_dir = os.path.join(extract_dir, 'backgrounds')
+background_dir = os.path.join(EXTRACT_DIR, 'backgrounds')
 os.makedirs(background_dir, exist_ok=True)
 
 # 5 різноманітних відкритих зображень (місто, природа, дорога, кімната, абстракція)
@@ -71,7 +92,7 @@ for i, url in enumerate(bg_urls):
             print(f"Не вдалося завантажити фон {url}: {e}")
 
 # --- Налаштування шляхів ---
-logo_dir   = os.path.join(extract_dir, 'logos')
+logo_dir   = os.path.join(EXTRACT_DIR, 'logos')
 output_dir = './dataset'
 
 splits  = ['train', 'val', 'test']
@@ -207,7 +228,6 @@ def augment_logo(logo):
     logo.putalpha(int(255 * alpha))
     return logo
 
-
 # --------------------- Збираємо списки файлів -------------------------
 logo_files = [
     os.path.join(logo_dir, f)
@@ -294,12 +314,9 @@ pbar.close()
 # Generating positive samples: 100%|██████████| 1000/1000 [02:51<00:00, 5.84it/s]
 # Generating negative samples: 100%|██████████| 1000/1000 [00:00<00:00, 1433.40it/s]
 
-
 # ============================================================
 # КРОК 2. Готуємо дані (ImageDataGenerator + train/val/test)
 # ============================================================
-
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 dataset_dir = '/content/dataset'
 img_size    = (150, 150)
@@ -333,19 +350,10 @@ test_generator = datagen.flow_from_directory(
 # Found  300 images belonging to 2 classes.
 # Found  300 images belonging to 2 classes.
 
-
 # ============================================================
 # КРОК 3. Будуємо архітектуру Xception (пошарово, без готової
 #         моделі з бібліотеки) та навчаємо
 # ============================================================
-
-import tensorflow as tf
-from tensorflow.keras import layers, models
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping
-import numpy as np
-import matplotlib.pyplot as plt
-
 
 def build_xception(input_shape=(150, 150, 3), num_classes=1):
     """
@@ -426,7 +434,6 @@ history = model.fit(
 # Epoch 1/30  ...  Epoch 30/30
 # Restoring model weights from the end of the best epoch: 27.
 
-
 # ============================================================
 # КРОК 4. Перевіряємо модель на тестових даних
 # ============================================================
@@ -494,7 +501,6 @@ print(f"F-Score   : {f1:.4f}")
 print("\nДетальний звіт:")
 print(classification_report(test_labels, test_preds,
                              target_names=class_names, zero_division=0))
-
 
 # ============================================================
 # КРОК 6. Графіки: розподіл передбачень та навчання
@@ -569,7 +575,6 @@ for i, index in enumerate(random_indices):
 plt.tight_layout()
 plt.show()
 
-
 # ============================================================
 # КРОК 8. Зберігаємо модель
 # ============================================================
@@ -586,7 +591,6 @@ model.save(model_save_path)
 print(f"Модель успішно збережено за шляхом: {model_save_path}")
 # Модель успішно збережено за шляхом: /content/drive/MyDrive/xception_20250413_113037.keras
 
-
 # ============================================================
 # КРОК 9. Тестуємо модель на відео
 #
@@ -594,10 +598,7 @@ print(f"Модель успішно збережено за шляхом: {model
 #            вивід часових інтервалів появи логотипу
 # ============================================================
 
-import cv2
-
-video_path  = '/content/bmw_logo_video.mp4'
-cap         = cv2.VideoCapture(video_path)
+cap = cv2.VideoCapture(VIDEO_PATH)
 
 # Отримуємо FPS для перетворення кадрів у час
 fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -609,12 +610,10 @@ frame_predictions  = []
 frame_numbers      = []
 frame_count        = 0
 
-
 def preprocess_frame(frame):
     """Масштабуємо кадр до (150×150) і нормалізуємо до [0, 1]."""
     resized = cv2.resize(frame, (150, 150))
     return resized.astype(np.float32) / 255.0
-
 
 def process_batch(batch_frames, batch_ids):
     """Передбачає клас для батчу кадрів (повертає ймовірності через sigmoid)."""
@@ -703,7 +702,7 @@ from scipy.ndimage import median_filter
 
 # ---- A) ПОФРЕЙМОВА (baseline) vs. БАТЧЕВА обробка ----
 
-cap_a = cv2.VideoCapture(video_path)
+cap_a = cv2.VideoCapture(VIDEO_PATH)
 all_raw_frames = []
 
 while True:
