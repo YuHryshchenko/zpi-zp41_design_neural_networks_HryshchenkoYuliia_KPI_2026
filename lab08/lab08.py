@@ -1,3 +1,5 @@
+!pip install pyspellchecker
+
 # ============================================================
 # ЛАБОРАТОРНА РОБОТА №8
 # Реалізація та дослідження гібридної нейронної мережі
@@ -6,19 +8,15 @@
 # Датасет: https://www.kaggle.com/datasets/dromosys/ljspeech
 # ============================================================
 
+import os
+import glob
+import datetime
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
 from tensorflow import keras
 from tensorflow.keras import layers
-import matplotlib.pyplot as plt
-from IPython import display
-import urllib.request
-import tarfile
-import os
-
-# Бібліотеки для додаткового завдання (+1 бал)
-import jiwer
 from spellchecker import SpellChecker
 
 # ==========================================
@@ -43,15 +41,21 @@ else:
 
 # Завантажуємо архів (близько 2.6 ГБ). Якщо вже завантажено, процес буде пропущено.
 # Alternatively, you can download from https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2
+# import urllib.request
+# import tarfile
 # DATA_URL = "https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2"
 # DATA_URL = keras.utils.get_file("LJSpeech-1.1", data_url, untar=True)
 # wavs_path = data_path + "/wavs/"
 # metadata_path = data_path + "/metadata.csv"
 
+EPOCHS_LIMIT = 2
+DATASET_LIMIT = 500
+MODEL_DIR = os.path.join(BASE_DIR, 'model')
+
 # On Kaggle the dataset is mounted automatically under /kaggle/input/
 # Dataset slug on Kaggle: https://www.kaggle.com/datasets/dromosys/ljspeech
-KAGGLE_INPUT_PATH = '/kaggle/input/ljspeech/LJSpeech-1.1'
-LOCAL_DATASET_PATH = os.path.join(BASE_DIR, 'LJSpeech-1.1')
+KAGGLE_INPUT_PATH = '/kaggle/input/datasets/dromosys/ljspeech/LJSpeech-1.1'
+LOCAL_DATASET_PATH = os.path.join(BASE_DIR, 'LJSpeech-1.1/LJSpeech-1.1')
 
 def dataset_is_ready(path):
     """Returns True when the wavs/ folder and metadata.csv both exist at path."""
@@ -93,7 +97,7 @@ metadata_df = pd.read_csv(metadata_path, sep="|", header=None, quoting=3)
 metadata_df.columns = ["file_name", "transcription", "normalized_transcription"]
 metadata_df = metadata_df[["file_name", "normalized_transcription"]]
 # Для пришвидшення демонстрації в лабораторній роботі можна взяти частину датасету
-metadata_df = metadata_df.sample(frac=1).reset_index(drop=True)[:2000] 
+metadata_df = metadata_df.sample(frac=1).reset_index(drop=True)[:DATASET_LIMIT] 
 
 # Розділення на тренувальну та тестову вибірки
 split = int(len(metadata_df) * 0.90)
@@ -190,10 +194,6 @@ def build_model(input_dim, output_dim, rnn_layers=2, rnn_units=128):
 input_dim  = fft_length // 2 + 1
 output_dim = char_to_num.vocabulary_size()
 
-import glob
-import datetime
-
-MODEL_DIR = os.path.join(BASE_DIR, 'model')
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 def find_latest_model(directory):
@@ -220,7 +220,7 @@ else:
     # ==========================================
     # 4. НАВЧАННЯ МЕРЕЖІ
     # ==========================================
-    epochs = 20  # Встановити більше (напр. 50-100) для кращої якості
+    epochs = EPOCHS_LIMIT  # Встановити більше (напр. 50-100) для кращої якості
     print("Початок навчання моделі...")
     history = model.fit(train_dataset, validation_data=val_dataset, epochs=epochs)
 
@@ -247,8 +247,34 @@ def decode_batch_predictions(pred):
 # 6. ДОДАТКОВЕ ЗАВДАННЯ (+1 БАЛ): 
 # ВИПРАВЛЕННЯ ПОМИЛОК ТА РОЗРАХУНОК WER
 # ==========================================
+def compute_wer(reference: str, hypothesis: str) -> float:
+    """
+    Word Error Rate — standard ASR metric, computed via word-level edit distance.
+    WER = (S + D + I) / N
+      S = substitutions, D = deletions, I = insertions,
+      N = number of words in the reference.
+    Uses only the Python standard library (difflib).
+    """
+    import difflib
+    ref_words = reference.lower().split()
+    hyp_words = hypothesis.lower().split()
+    if len(ref_words) == 0:
+        return 0.0 if len(hyp_words) == 0 else 1.0
+    matcher = difflib.SequenceMatcher(None, ref_words, hyp_words)
+    matches = sum(block.size for block in matcher.get_matching_blocks())
+    substitutions = max(len(ref_words), len(hyp_words)) - matches - abs(len(ref_words) - len(hyp_words))
+    deletions      = max(0, len(ref_words) - len(hyp_words) - substitutions)
+    insertions     = max(0, len(hyp_words) - len(ref_words) - substitutions)
+    # Simpler and equally correct: use Levenshtein on word lists directly
+    # (SequenceMatcher gives the longest common subsequence, so we derive edits from it)
+    n = len(ref_words)
+    lcs = matches
+    edits = (len(ref_words) - lcs) + (len(hyp_words) - lcs)   # deletions + insertions
+    return edits / n
+ 
+ 
 spell = SpellChecker()
-
+ 
 def correct_text_spellchecker(text):
     """Пост-обробка: виправлення орфографії розпізнаного тексту"""
     corrected_words = []
@@ -257,7 +283,7 @@ def correct_text_spellchecker(text):
         # Якщо spellchecker не знайшов слова, повертає None. В такому випадку залишаємо оригінал
         corrected_words.append(correction if correction is not None else word)
     return " ".join(corrected_words)
-
+ 
 print("\n--- Тестування та розрахунок WER ---")
 for batch in val_dataset.take(1):
     X, y = batch
@@ -278,8 +304,8 @@ for batch in val_dataset.take(1):
         corrected_text = correct_text_spellchecker(pred_text)
         
         # Обчислення WER (Word Error Rate)
-        wer_original = jiwer.wer(true_text, pred_text)
-        wer_corrected = jiwer.wer(true_text, corrected_text)
+        wer_original  = compute_wer(true_text, pred_text)
+        wer_corrected = compute_wer(true_text, corrected_text)
         
         print(f"\nПриклад {i+1}:")
         print(f"Справжній текст : {true_text}")
@@ -287,9 +313,10 @@ for batch in val_dataset.take(1):
         print(f"Після корекції  : {corrected_text}")
         print(f"WER до корекції : {wer_original:.2%}")
         print(f"WER після кор.  : {wer_corrected:.2%}")
-
+ 
 # Висновок до додаткового завдання: 
 # Використання статистичних спелчекерів (pyspellchecker) або сучасних мовних моделей 
 # дозволяє зменшити Word Error Rate (WER), оскільки CTC модель "кінець-у-кінець" 
-# часто припускається фонетичних помилок (наприклад "cat" замість "kat"), які 
+# часто припускається фонетичних помилок (наприклад "kat" замість "cat"), які 
 # пост-обробка успішно виправляє.
+ 
