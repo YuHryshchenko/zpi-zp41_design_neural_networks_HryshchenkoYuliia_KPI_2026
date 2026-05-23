@@ -13,3 +13,4 @@ tqdm==4.67.3
 spacy==3.8.14
 nltk==3.9.4
 tokenizers==0.23.1
+albumentations==2.0.8
