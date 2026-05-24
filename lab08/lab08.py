@@ -1,4 +1,5 @@
-!pip install pyspellchecker
+# Uncomment on Kaggle
+#!pip install pyspellchecker
 
 # ============================================================
 # ЛАБОРАТОРНА РОБОТА №8

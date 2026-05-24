@@ -1,3 +1,6 @@
+# Uncomment on Kaggle
+# !pip install ultralytics
+
 # ============================================================
 # МКР: ДЕТЕКЦІЯ ОБ'ЄКТУ НА ВІДЕО З ВИКОРИСТАННЯМ YOLOv11
 # Предмет: Проектування та реалізація програмних систем з НМ
@@ -69,25 +72,27 @@ DETECTION_TARGET = 'logo'          # Назва класу що детектує
 CLASS_NAMES = [DETECTION_TARGET]   # Список класів YOLOv11
 
 # --- Кількість синтетичних зображень для генерації ---
-NUM_TRAIN_IMAGES  = 700   # тренувальна вибірка
-NUM_VAL_IMAGES    = 150   # валідаційна вибірка
-NUM_TEST_IMAGES   = 150   # тестова вибірка
+NUM_TRAIN_IMAGES  = 350   # тренувальна вибірка
+NUM_VAL_IMAGES    = 100   # валідаційна вибірка
+NUM_TEST_IMAGES   = 50   # тестова вибірка
 
 # --- Розміри зображень ---
 IMAGE_SIZE = (640, 640)   # стандартний вхід YOLOv11
 
 # --- Параметри навчання ---
-EPOCHS          = 50      # кількість епох навчання
-BATCH_SIZE      = 16      # розмір батчу
-LEARNING_RATE   = 0.01    # початковий lr (автоматично регулюється)
-YOLO_MODEL_NAME = 'yolo11n.pt'  # nano-версія (найшвидша); для кращої точності: yolo11s.pt
+EPOCHS             = 15           # кількість епох навчання
+PATIENCE_EPOCHS    = 10           # кількість епох для зупинки якщо нема покращення
+EPOCHS_SAVE_PERIOD = 5            # зберігати checkpoint кожні EPOCHS_SAVE_PERIOD епох
+BATCH_SIZE         = 16           # розмір батчу
+LEARNING_RATE      = 0.01         # початковий lr (автоматично регулюється)
+YOLO_MODEL_NAME    = 'yolo11n.pt' # nano-версія (найшвидша); для кращої точності: yolo11s.pt
 
 # --- Поріг впевненості при детекції ---
 CONFIDENCE_THRESHOLD = 0.45
 IOU_THRESHOLD        = 0.5
 
 # --- Аугментація: кількість копій кожного зображення ---
-AUGMENTATION_COPIES = 3   # кожне зображення → 3 аугментовані варіанти
+AUGMENTATION_COPIES = 2   # кожне зображення → 2 аугментовані варіанти
 
 # ============================================================
 # --- 1.1 Визначення та налаштування середовища (Kaggle / Local) ---
@@ -116,8 +121,10 @@ GITHUB_BASE_URL     = (
     "zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026"
     "/raw/main/mkr/"
 )
-CLEANED_IMG_ZIP_URL = GITHUB_BASE_URL + "cleaned-img.zip"
-SOURCE_VIDEO_URL = GITHUB_BASE_URL + "input_video.mp4"
+CLEANED_IMG_ZIP_URL     = GITHUB_BASE_URL + "cleaned-img.zip"
+SOURCE_VIDEO_URL        = GITHUB_BASE_URL + "input_video.mp4"
+KAGGLE_WORKING_DIR      = "/kaggle/working/"
+VIDEO_INPUT_FILENAME    = "input_video.mp4"
 
 # --- Шляхи до архіву та розпакованих логотипів ---
 # Архів знаходиться поряд зі скриптом mkr.py (поточна директорія)
@@ -132,8 +139,9 @@ ASSETS_DIR            = BASE_DIR / "assets"
 VIDEO_OUTPUT_DIR      = BASE_DIR / "video_output"
 RUNS_DIR              = BASE_DIR / "runs"
 DATA_YAML_PATH        = BASE_DIR / "data.yaml"
-VIDEO_INPUT_PATH      = BASE_DIR / "input_video.mp4"
+VIDEO_INPUT_PATH      = BASE_DIR / VIDEO_INPUT_FILENAME
 VIDEO_OUTPUT_PATH     = VIDEO_OUTPUT_DIR / "output_detected.mp4"
+DATASET_SAMPLES_PREVIEW = BASE_DIR / "dataset_samples_preview.png"
 
 # --- Структура датасету (split → subdir) ---
 SPLITS = ['train', 'val', 'test']
@@ -148,7 +156,7 @@ import zipfile
 
 # Шляхи для збереження завантажених файлів
 ZIP_PATH = "cleaned-img.zip"
-VIDEO_INPUT_PATH = "input_video.mp4"
+VIDEO_INPUT_FILENAME = "input_video.mp4"
 EXTRACT_DIR = "cleaned-img" # Після розпакування тут буде папка toyota
 
 # Завантаження та розпакування архіву з зображеннями (логотипи Toyota)
@@ -166,15 +174,15 @@ else:
     print(f"[*] Директорія '{EXTRACT_DIR}' вже існує. Пропускаємо завантаження архіву.")
 
 # Завантаження вхідного відео
-if not os.path.exists(VIDEO_INPUT_PATH):
-    print(f"[*] Завантаження вхідного відео: {VIDEO_INPUT_PATH}...")
-    urllib.request.urlretrieve(SOURCE_VIDEO_URL, VIDEO_INPUT_PATH)
+if not os.path.exists(VIDEO_INPUT_FILENAME):
+    print(f"[*] Завантаження вхідного відео: {VIDEO_INPUT_FILENAME}...")
+    urllib.request.urlretrieve(SOURCE_VIDEO_URL, VIDEO_INPUT_FILENAME)
     print("[+] Відео успішно завантажено.")
 else:
-    print(f"[*] Відео '{VIDEO_INPUT_PATH}' вже існує. Пропускаємо завантаження.")
+    print(f"[*] Відео '{VIDEO_INPUT_FILENAME}' вже існує. Пропускаємо завантаження.")
 
 # Оновлюємо шлях до директорії з сирими зображеннями для подальшого використання у коді
-RAW_DATASET_DIR = os.path.join(EXTRACT_DIR, "toyota")
+RAW_DATASET_DIR = Path(EXTRACT_DIR) / "toyota"
 
 # ============================================================
 # РОЗДІЛ 1: ПІДГОТОВКА ДИРЕКТОРІЙ ТА ДОПОМІЖНІ ФУНКЦІЇ
@@ -195,6 +203,16 @@ def create_directory_structure() -> None:
         VIDEO_OUTPUT_DIR,
         RUNS_DIR,
     ]
+
+    # ──── Якщо хочемо видалити і перетренувати моделі на Kaggle ────
+    if os.path.exists(AUGMENTED_DATASET_DIR):
+      # shutil.rmtree(AUGMENTED_DATASET_DIR)
+      remove_folder_contents(AUGMENTED_DATASET_DIR)
+      os.rmdir(AUGMENTED_DATASET_DIR)
+
+    if os.path.exists(DATASET_SAMPLES_PREVIEW):
+      os.unlink(DATASET_SAMPLES_PREVIEW)
+
     # Для кожного split створюємо папки images/ та labels/
     for split in SPLITS:
         for dataset_dir in [RAW_DATASET_DIR, AUGMENTED_DATASET_DIR]:
@@ -583,7 +601,7 @@ def visualize_dataset_samples(n: int = 6) -> None:
 
     plt.suptitle("Зразки датасету з YOLO-анотаціями (зелена рамка)", fontsize=12)
     plt.tight_layout()
-    save_path = BASE_DIR / "dataset_samples_preview.png"
+    save_path = BASE_DIR / DATASET_SAMPLES_PREVIEW
     plt.savefig(save_path, dpi=100, bbox_inches='tight')
     plt.show()
     print(f"  ✓ Збережено у '{save_path}'")
@@ -845,6 +863,18 @@ def visualize_augmentation_comparison(n_pairs: int = 4) -> None:
     plt.show()
     print(f"  ✓ Збережено у '{save_path}'")
 
+# ============================================================
+def remove_folder_contents(folder):
+    for the_file in os.listdir(folder):
+        file_path = os.path.join(folder, the_file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                remove_folder_contents(file_path)
+                os.rmdir(file_path)
+        except Exception as e:
+            print(e)
 
 # ============================================================
 # РОЗДІЛ 4: КОНФІГУРАЦІЯ YOLO ТА ПІДГОТОВКА data.yaml
@@ -992,6 +1022,7 @@ def train_yolov11(data_yaml: Path) -> tuple:
 
     # --- Запуск навчання ---
     # Параметр pretrained=True дозволяє використовувати ваги ImageNet
+
     results = model.train(
         data=str(data_yaml),          # шлях до data.yaml
         epochs=EPOCHS,                 # кількість епох
@@ -1001,8 +1032,8 @@ def train_yolov11(data_yaml: Path) -> tuple:
         project=str(RUNS_DIR),         # директорія для збереження результатів
         name="yolo11_logo_detection",  # назва експерименту
         save=True,                     # зберігати найкращу та останню модель
-        save_period=10,                # зберігати checkpoint кожні 10 епох
-        patience=15,                   # early stopping: зупинка якщо 15 епох без покращення
+        save_period=EPOCHS_SAVE_PERIOD,# зберігати checkpoint кожні EPOCHS_SAVE_PERIOD епох
+        patience=PATIENCE_EPOCHS,      # early stopping: зупинка якщо PATIENCE_EPOCHS епох без покращення
         device='0' if _gpu_available() else 'cpu',  # GPU якщо є, інакше CPU
         workers=4,                     # кількість паралельних процесів завантаження даних
         plots=True,                    # генерувати графіки метрик
@@ -2024,9 +2055,12 @@ def main():
 
     # === НАЛАШТУЙТЕ ЦІ ШЛЯХИ ДЛЯ РЕАЛЬНИХ ДАНИХ ===
     # Для логотипу (лаб 6): папка з PNG/JPEG зображеннями логотипу
-    LOGO_DIR_REAL      = None   # Приклад: "C:/MyProject/toyota_logos"
+    # Приклад: "C:/MyProject/toyota_logos"
+    LOGO_DIR_REAL = RAW_DATASET_DIR  
     # Для улюбленця (лаб 5): папка з PNG/JPEG зображеннями тварини
-    PET_DIR_REAL       = None   # Приклад: "C:/MyProject/golden_retriever"
+    # Приклад: "C:/MyProject/golden_retriever"
+    # Залишаємо None, оскільки ми працюємо з автомобільною тематикою
+    PET_DIR_REAL = None
     # Фонові зображення (без об'єкту)
     BACKGROUND_DIR_REAL = None  # Приклад: "C:/MyProject/backgrounds"
 

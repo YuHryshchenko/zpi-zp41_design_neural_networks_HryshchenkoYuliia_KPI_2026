@@ -1,0 +1,7 @@
+names:
+- logo
+nc: 1
+path: /kaggle/working/dataset_augmented
+test: test/images
+train: train/images
+val: val/images
