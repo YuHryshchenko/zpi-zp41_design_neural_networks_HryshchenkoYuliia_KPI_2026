@@ -40,7 +40,7 @@ from sklearn.metrics import (
 # ============================================================
 
 # --- 1.1 Визначення та налаштування середовища ---
-CURRENT_LAB = "lab08"
+CURRENT_LAB = "lab06"
 
 def is_kaggle():
     return "KAGGLE_KERNEL_RUN_TYPE" in os.environ
@@ -65,7 +65,7 @@ DATASET_DIR = BASE_DIR + 'dataset'
 VIDEO_DIR  = BASE_DIR + 'video'
 EXTRACT_DIR = BASE_DIR + "raw-img"
 VIDEO_PATH  = BASE_DIR + 'logo_video.mp4'
-ZIP_PATH = BASE_DIR + "raw_img.zip"
+ZIP_PATH = BASE_DIR + "raw-img.zip"
 
 # --- 1.3 Автоматичне завантаження фонових зображень ---
 if not os.path.exists(EXTRACT_DIR):
@@ -113,7 +113,7 @@ for i, url in enumerate(bg_urls):
 
 # --- 1.6 Налаштування шляхів ---
 LOGO_DIR   = os.path.join(EXTRACT_DIR, 'raw-img/toyota')
-OUTPUT_DIR = './dataset'
+OUTPUT_DIR = DATASET_DIR
 
 splits  = ['train', 'val', 'test']
 classes = ['positive', 'negative']

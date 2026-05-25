@@ -8,5 +8,8 @@ raw-img
 raw-img/*
 dataset
 dataset/*
-top_detections
-top_detections/*
+alexnet_model.keras
+yelp_dataset
+yelp_dataset/*
+LJSpeech-1.1
+LJSpeech-1.1/*

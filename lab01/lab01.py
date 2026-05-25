@@ -17,11 +17,10 @@
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
+import urllib.request
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
-
-# matplotlib.use("Agg")           # для запуску без дисплея (сервер/CI)
 
 # --- 1.1 Визначення та налаштування середовища ---
 CURRENT_LAB = "lab01"
@@ -31,13 +30,15 @@ def is_kaggle():
 
 if is_kaggle():
     print("Running on Kaggle")
-    # Set Kaggle-specific paths
     BASE_DIR = ""
 else:
     print("Running locally")
-    # Set local paths
     ABSOLUTE_PATH = os.getcwd()
     BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
+    # Ensure the local directory exists before saving anything there
+    os.makedirs(BASE_DIR, exist_ok=True)
+
+NUM_EPOCHS = 100
 
 # Привітання у Kaggle
 print("Привіт, Kaggle!")
@@ -45,8 +46,6 @@ print("Привіт, Kaggle!")
 # Робота з масивом чисел
 numbers = [1, 2, 3, 4, 5]
 print("Масив чисел:", numbers)
-
-# Обчислення суми чисел у масиві
 total = sum(numbers)
 print("Сума чисел:", total)
 
@@ -54,12 +53,11 @@ print("Сума чисел:", total)
 x_plot = [1, 2, 3, 4, 5]
 y_plot = [2, 4, 6, 8, 10]
 
-# Побудова графіку з бібліотекою matplotlib
 plt.plot(x_plot, y_plot)
 plt.title("Простий графік")
 plt.xlabel("X")
 plt.ylabel("Y")
-plt.savefig("simple_plot.png", bbox_inches="tight")
+plt.savefig(os.path.join(BASE_DIR, "simple_plot.png") if BASE_DIR else "simple_plot.png", bbox_inches="tight")
 plt.show()
 print()
 
@@ -71,37 +69,26 @@ print("=" * 60)
 print("ПРИКЛАД: XOR для 3-х змінних (рисунок з методички)")
 print("=" * 60)
 
-# Таблиця істинності XOR(a, b, c) – усі 8 комбінацій
-x = np.array([[0, 0, 0],
-              [0, 0, 1],
-              [0, 1, 0],
-              [1, 0, 0],
-              [0, 1, 1],
-              [1, 0, 1],
-              [1, 1, 0],
-              [1, 1, 1]])
+x = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0],
+              [0, 1, 1], [1, 0, 1], [1, 1, 0], [1, 1, 1]])
 y = np.array([0, 1, 1, 1, 0, 0, 0, 1])
 
-# Побудова моделі Перцептрону (Sequential MLP)
 model = tf.keras.Sequential([
     tf.keras.layers.Dense(3, input_dim=3, activation="tanh"),
     tf.keras.layers.Dense(1, activation="sigmoid"),
 ])
 
-# Компіляція та навчання
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=0.05),
     loss='binary_crossentropy',
     metrics=['accuracy']
 )
-model.fit(x, y, epochs=100, verbose=0)
+model.fit(x, y, epochs=NUM_EPOCHS, verbose=0)
 
-# Оцінка якості
 loss, accuracy = model.evaluate(x, y, verbose=0)
 print("loss", loss)
 print("accuracy", accuracy)
 
-# Прогноз для кожного рядка таблиці
 prediction = model.predict(x, verbose=0)
 for inp, pred in zip(x, prediction):
     print(inp, round(pred[0]))
@@ -113,15 +100,12 @@ print()
 # ══════════════════════════════════════════════════════════════════════════════
 
 print("=" * 60)
-print("ЗАВДАННЯ: XOR для 4-х змінних")
+print("ЗАВДАННЯ: XOR для 4-х змінних (із збереженням/завантаженням)")
 print("=" * 60)
 
-# Фіксуємо зерно випадковості для відтворюваності результату
 tf.random.set_seed(0)
 np.random.seed(0)
 
-# Таблиця істинності XOR(a, b, c, d) – усі 16 комбінацій
-# XOR повертає 1, якщо кількість одиниць є непарною
 x4 = np.array(
     [[int(b) for b in format(i, '04b')] for i in range(16)],
     dtype=np.float32
@@ -139,43 +123,61 @@ for row, label in zip(x4, y4):
     print(f"  {a:>2} {b:>2} {c:>2} {d:>2} |  {int(label)}")
 print()
 
-# ── Архітектура моделі ────────────────────────────────────────────────────────
-# Використовується 2 прихованих шари з активацією tanh (як у прикладі з
-# методички), але збільшено кількість нейронів і глибину мережі, оскільки
-# 4-змінний XOR є складнішою нелінійно-несепарабельною задачею.
-model4 = tf.keras.Sequential([
-    tf.keras.layers.Dense(8, input_dim=4, activation="tanh"),
-    tf.keras.layers.Dense(8, activation="tanh"),
-    tf.keras.layers.Dense(1, activation="sigmoid"),
-])
+# ── Логіка завантаження, скачування або навчання ──────────────────────────────
+MODEL_FILENAME = "model.keras"
+model_path = os.path.join(BASE_DIR, MODEL_FILENAME) if BASE_DIR else MODEL_FILENAME
 
-# Компіляція (аналогічно прикладу з методички)
-model4.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=0.05),
-    loss='binary_crossentropy',
-    metrics=['accuracy']
-)
+# URL змінено на raw-формат для коректного завантаження бінарного файлу
+RAW_MODEL_URL = "https://raw.githubusercontent.com/YuHryshchenko/zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026/main/lab01/model.keras"
 
-# Зворотній виклик: зупиняємо навчання, щойно точність досягла 100 %
-class StopAt100(tf.keras.callbacks.Callback):
-    def on_epoch_end(self, epoch, logs=None):
-        if logs.get('accuracy', 0) >= 1.0:
-            print(f"\nДосягнуто 100% точності на епосі {epoch + 1}. Зупинка.")
-            self.model.stop_training = True
+history4 = None
 
-print("Навчання моделі (макс. 500 епох)...")
-history4 = model4.fit(
-    x4, y4,
-    epochs=500,
-    verbose=0,
-    callbacks=[StopAt100()]
-)
+if os.path.exists(model_path):
+    print(f"[ІНФО] Знайдено локальну модель: {model_path}. Завантаження...")
+    model4 = tf.keras.models.load_model(model_path)
+else:
+    print(f"[ІНФО] Локальну модель не знайдено. Спроба завантаження з GitHub...")
+    try:
+        urllib.request.urlretrieve(RAW_MODEL_URL, model_path)
+        print("[ІНФО] Модель успішно завантажено з GitHub!")
+        model4 = tf.keras.models.load_model(model_path)
+    except Exception as e:
+        print(f"[ІНФО] Не вдалося завантажити модель ({e}). Починаємо навчання нової...")
+
+        model4 = tf.keras.Sequential([
+            tf.keras.layers.Dense(8, input_dim=4, activation="tanh"),
+            tf.keras.layers.Dense(8, activation="tanh"),
+            tf.keras.layers.Dense(1, activation="sigmoid"),
+        ])
+
+        model4.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.05),
+            loss='binary_crossentropy',
+            metrics=['accuracy']
+        )
+
+        class StopAt100(tf.keras.callbacks.Callback):
+            def on_epoch_end(self, epoch, logs=None):
+                if logs.get('accuracy', 0) >= 1.0:
+                    print(f"\nДосягнуто 100% точності на епосі {epoch + 1}. Зупинка.")
+                    self.model.stop_training = True
+
+        print("Навчання моделі (макс. 500 епох)...")
+        history4 = model4.fit(
+            x4, y4,
+            epochs=500,
+            verbose=0,
+            callbacks=[StopAt100()]
+        )
+        
+        print(f"[ІНФО] Збереження навченої моделі у {model_path}...")
+        model4.save(model_path)
+
 
 # ── Оцінка якості ─────────────────────────────────────────────────────────────
 loss4, accuracy4 = model4.evaluate(x4, y4, verbose=0)
-print(f"loss     {loss4:.4f}")
-print(f"accuracy {accuracy4:.4f}")
-print()
+print(f"\nloss     {loss4:.4f}")
+print(f"accuracy {accuracy4:.4f}\n")
 
 # ── Прогноз для кожного рядка таблиці ────────────────────────────────────────
 print("Прогнози моделі:")
@@ -192,34 +194,35 @@ for inp, expected, pred in zip(x4, y4, prediction4):
     if pred_i == exp_i:
         correct += 1
 
-print()
-print(f"Правильно класифіковано: {correct}/{len(y4)}")
-print()
+print(f"\nПравильно класифіковано: {correct}/{len(y4)}\n")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ЧАСТИНА 4 – Графіки навчання (loss та accuracy по епохах)
+# ЧАСТИНА 4 – Графіки навчання
 # ══════════════════════════════════════════════════════════════════════════════
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+# Якщо модель завантажена з файлу, історії навчання не існує
+if history4 is not None:
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
-# Графік втрат
-ax1.plot(history4.history['loss'], color='crimson', linewidth=2)
-ax1.set_title("Втрати (Loss) під час навчання\nXOR для 4 змінних")
-ax1.set_xlabel("Епоха")
-ax1.set_ylabel("Loss (binary crossentropy)")
-ax1.grid(True, alpha=0.3)
+    ax1.plot(history4.history['loss'], color='crimson', linewidth=2)
+    ax1.set_title("Втрати (Loss) під час навчання\nXOR для 4 змінних")
+    ax1.set_xlabel("Епоха")
+    ax1.set_ylabel("Loss (binary crossentropy)")
+    ax1.grid(True, alpha=0.3)
 
-# Графік точності
-ax2.plot(history4.history['accuracy'], color='steelblue', linewidth=2)
-ax2.set_title("Точність (Accuracy) під час навчання\nXOR для 4 змінних")
-ax2.set_xlabel("Епоха")
-ax2.set_ylabel("Accuracy")
-ax2.set_ylim(0, 1.05)
-ax2.axhline(y=1.0, color='green', linestyle='--', alpha=0.5, label='100 %')
-ax2.legend()
-ax2.grid(True, alpha=0.3)
+    ax2.plot(history4.history['accuracy'], color='steelblue', linewidth=2)
+    ax2.set_title("Точність (Accuracy) під час навчання\nXOR для 4 змінних")
+    ax2.set_xlabel("Епоха")
+    ax2.set_ylabel("Accuracy")
+    ax2.set_ylim(0, 1.05)
+    ax2.axhline(y=1.0, color='green', linestyle='--', alpha=0.5, label='100 %')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
 
-plt.tight_layout()
-plt.savefig("training_history_xor4.png", bbox_inches="tight", dpi=120)
-plt.show()
-print("Графік збережено: training_history_xor4.png")
+    plt.tight_layout()
+    plot_path = os.path.join(BASE_DIR, "training_history_xor4.png") if BASE_DIR else "training_history_xor4.png"
+    plt.savefig(plot_path, bbox_inches="tight", dpi=120)
+    plt.show()
+    print(f"Графік збережено: {plot_path}")
+else:
+    print("[ІНФО] Графіки навчання пропущено, оскільки готову модель було завантажено з файлу.")

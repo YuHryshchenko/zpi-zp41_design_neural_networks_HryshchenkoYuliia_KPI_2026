@@ -54,6 +54,8 @@ else:
     # Set local paths
     ABSOLUTE_PATH = os.getcwd()
     BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
+    # Створення локальної директорії перед збереженням файлів
+    os.makedirs(BASE_DIR, exist_ok=True)
 
 # ============================================================
 # КРОК 1. Завантаження датасету з Kaggle
@@ -69,13 +71,15 @@ else:
 # !unzip -o yelp-review-polarity.zip -d ./yelp_dataset/
 # -------------------------------------------------------------
 
+NUM_EPOCHS=10
+
 # Пряме завантаження у поточну директорію через Kaggle API
-dataset_path = BASE_DIR + './yelp_dataset/yelp_review_polarity_csv'
+dataset_path = os.path.join(BASE_DIR, 'yelp_dataset', 'yelp_review_polarity_csv/yelp_review_polarity_csv/') if BASE_DIR else './yelp_dataset/yelp_review_polarity_csv'
  
 # Kaggle Notebooks mount the dataset automatically under /kaggle/input/
 KAGGLE_INPUT_PATH = '/kaggle/input/datasets/irustandi/yelp-review-polarity/yelp_review_polarity_csv'
 
-MODEL_DIR = os.path.join(BASE_DIR, 'model')
+MODEL_DIR = os.path.join(BASE_DIR, 'model') if BASE_DIR else 'model'
 
 def dataset_is_ready(path):
     """Returns True when both train.csv and test.csv exist at the given path."""
@@ -210,13 +214,13 @@ def find_latest_model(directory):
 saved_model_path = find_latest_model(MODEL_DIR)
  
 if saved_model_path:
-    print(f"Знайдено збережену модель: {saved_model_path}")
+    print(f"\nЗнайдено збережену модель: {saved_model_path}")
     print("Завантажуємо модель, навчання пропущено.")
     model = tf.keras.models.load_model(saved_model_path)
     model.summary()
     history = None   # history недоступна при завантаженні
 else:
-    print("Збереженої моделі не знайдено. Починаємо побудову та навчання...")
+    print("\nЗбереженої моделі не знайдено. Починаємо побудову та навчання...")
  
     model = Sequential([
         Embedding(input_dim=VOCAB_SIZE, output_dim=128, input_length=SEQUENCE_LENGTH),
@@ -251,7 +255,7 @@ else:
  
     history = model.fit(
         X_train_pad, y_train,
-        epochs=5,
+        epochs=NUM_EPOCHS,
         batch_size=64,
         validation_data=(X_test_pad, y_test),
         callbacks=[early_stop]
@@ -267,7 +271,7 @@ else:
 # КРОК 8. Оцінка моделі на тестових даних
 # ============================================================
 
-print("Evaluating on test data...")
+print("\nEvaluating on test data...")
 loss, accuracy = model.evaluate(X_test_pad, y_test)
 print(f"Test Set Accuracy: {accuracy:.4f}")
 
@@ -297,16 +301,18 @@ if history is not None:
     plt.grid(True)
  
     plt.tight_layout()
-    plt.savefig('lstm_training_history.png')
+    hist_plot_path = os.path.join(BASE_DIR, 'lstm_training_history.png') if BASE_DIR else 'lstm_training_history.png'
+    plt.savefig(hist_plot_path, bbox_inches='tight', dpi=300)
     plt.show()
+    print(f"[ІНФО] Графік історії навчання збережено у: {hist_plot_path}")
 else:
-    print("Графіки навчання недоступні (модель завантажена з файлу).")
+    print("[ІНФО] Графіки навчання недоступні (модель завантажена з файлу).")
 
 # ============================================================
 # КРОК 10. Матриця помилок + accuracy, precision, recall, F-Score
 # ============================================================
 
-y_pred_probs = model.predict(X_test_pad).flatten()
+y_pred_probs = model.predict(X_test_pad, verbose=0).flatten()
 y_pred       = (y_pred_probs > 0.5).astype(int)
 
 # --- Матриця помилок ---
@@ -321,8 +327,11 @@ plt.xlabel('Передбачений клас')
 plt.ylabel('Справжній клас')
 plt.title('Матриця помилок (Confusion Matrix)')
 plt.tight_layout()
-plt.savefig('confusion_matrix.png')
+
+cm_plot_path = os.path.join(BASE_DIR, 'confusion_matrix_lab07.png') if BASE_DIR else 'confusion_matrix_lab07.png'
+plt.savefig(cm_plot_path, bbox_inches='tight', dpi=300)
 plt.show()
+print(f"[ІНФО] Матрицю помилок збережено у: {cm_plot_path}")
 
 # --- Числові метрики ---
 acc_val  = accuracy_score(y_test, y_pred)
@@ -405,10 +414,10 @@ for idx in sample_indices:
 # ! python -m spacy download en_core_web_sm --quiet
 # ! pip install tokenizers --quiet
 
+# == Будує, навчає та оцінює LSTM для конкретного методу токенізації. ==
 def train_and_evaluate(X_tr_pad, X_te_pad, y_tr, y_te,
                        vocab_size, seq_len, method_name,
-                       epochs=5, batch_size=64):
-    """Будує, навчає та оцінює LSTM для конкретного методу токенізації."""
+                       epochs=NUM_EPOCHS, batch_size=64):
     print(f"\n{'='*55}")
     print(f"  Метод токенізації: {method_name}")
     print(f"{'='*55}")
@@ -493,7 +502,13 @@ results_list.append(res_nltk)
 # ─────────────────────────────────────────────
 print("\n[3] Токенізація за допомогою SpaCy...")
 
-nlp_spacy = spacy.load('en_core_web_sm', disable=['ner', 'parser', 'tagger'])
+try:
+    nlp_spacy = spacy.load('en_core_web_sm', disable=['ner', 'parser', 'tagger'])
+except OSError:
+    print("[ІНФО] Модель 'en_core_web_sm' не знайдена локально. Починаємо автоматичне скачування...")
+    import spacy.cli
+    spacy.cli.download('en_core_web_sm')
+    nlp_spacy = spacy.load('en_core_web_sm', disable=['ner', 'parser', 'tagger'])
 
 def spacy_tokenize_texts(texts, vocab_size=10000, seq_len=100):
     from collections import Counter
@@ -522,7 +537,7 @@ results_list.append(res_spacy)
 print("\n[4] BPE токенізація (HuggingFace tokenizers)...")
 
 # Зберігаємо тренувальні тексти у локальний тимчасовий файл
-train_texts_file = './train_texts.txt'
+train_texts_file = os.path.join(BASE_DIR, 'train_texts.txt') if BASE_DIR else './train_texts.txt'
 with open(train_texts_file, 'w', encoding='utf-8') as f:
     for t in X_train:
         f.write(str(t) + '\n')
@@ -582,11 +597,14 @@ ax.set_title('Порівняння методів токенізації (LSTM, 
 ax.legend()
 ax.grid(axis='y', alpha=0.3)
 plt.tight_layout()
-plt.savefig('tokenization_comparison.png')
+
+tok_comp_path = os.path.join(BASE_DIR, 'tokenization_comparison.png') if BASE_DIR else 'tokenization_comparison.png'
+plt.savefig(tok_comp_path, bbox_inches='tight', dpi=300)
 plt.show()
+print(f"[ІНФО] Графік порівняння методів токенізації збережено у: {tok_comp_path}")
 
 # ─────────────────────────────────────────────
-# Графіки навчання для кожного методу (крім baseline)
+# Графіки навчання для кожного методу
 # ─────────────────────────────────────────────
 fig2, axes = plt.subplots(len(results_list) - 1, 2, figsize=(14, 4 * (len(results_list) - 1)))
 
@@ -610,5 +628,8 @@ for row_idx, res in enumerate(results_list[1:]):   # пропускаємо Kera
 
 plt.suptitle('Криві навчання для різних методів токенізації', fontsize=13)
 plt.tight_layout()
-plt.savefig('tokenization_training_curves.png')
+
+tok_curves_path = os.path.join(BASE_DIR, 'tokenization_training_curves.png') if BASE_DIR else 'tokenization_training_curves.png'
+plt.savefig(tok_curves_path, bbox_inches='tight', dpi=300)
 plt.show()
+print(f"[ІНФО] Криві навчання методів токенізації збережено у: {tok_curves_path}")

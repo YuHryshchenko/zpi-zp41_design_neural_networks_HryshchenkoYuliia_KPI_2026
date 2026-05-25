@@ -56,7 +56,7 @@ MODEL_DIR = os.path.join(BASE_DIR, 'model')
 # On Kaggle the dataset is mounted automatically under /kaggle/input/
 # Dataset slug on Kaggle: https://www.kaggle.com/datasets/dromosys/ljspeech
 KAGGLE_INPUT_PATH = '/kaggle/input/datasets/dromosys/ljspeech/LJSpeech-1.1'
-LOCAL_DATASET_PATH = os.path.join(BASE_DIR, 'LJSpeech-1.1/LJSpeech-1.1')
+LOCAL_DATASET_PATH = os.path.join(BASE_DIR, 'LJSpeech-1.1/LJSpeech-1.1/LJSpeech-1.1')
 
 def dataset_is_ready(path):
     """Returns True when the wavs/ folder and metadata.csv both exist at path."""

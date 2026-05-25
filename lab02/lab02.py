@@ -16,6 +16,7 @@
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
+import urllib.request
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
@@ -31,40 +32,31 @@ def is_kaggle():
 
 if is_kaggle():
     print("Running on Kaggle")
-    # Set Kaggle-specific paths
     BASE_DIR = ""
 else:
     print("Running locally")
-    # Set local paths
     ABSOLUTE_PATH = os.getcwd()
-    BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
+    BASE_DIR = os.path.join(ABSOLUTE_PATH, CURRENT_LAB, "")
+    os.makedirs(BASE_DIR, exist_ok=True)
+
+# URL змінено на raw-формат для коректного завантаження бінарних файлів
+RAW_BASE_URL = "https://raw.githubusercontent.com/YuHryshchenko/zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026/main/lab02/"
+
+# Словник для співставлення назви моделі та імені її файлу на GitHub
+MODEL_FILENAMES = {
+    "FeedForward (10 нейронів)": "ff_10.keras",
+    "FeedForward (20 нейронів)": "ff_20.keras",
+    "Cascade (20 нейронів)": "cascade_20.keras",
+    "Cascade (2x10 нейронів)": "cascade_2x10.keras",
+    "Elman (15 нейронів)": "elman_15.keras",
+    "Elman (3x5 нейронів)": "elman_3x5.keras"
+}
 
 # Функція для генерації навчальних даних
 def generate_data(n_samples=1000):
-    # Промоделювати на невеликому відрізку, від 0 до 10 (завдання п.58)
     X = np.random.uniform(0, 10, (n_samples, 2))
-    # Функція двох змінних: f(x, y) = x^2 + y^2 (завдання п.57)
     Y = X[:, 0]**2 + X[:, 1]**2
     return X, Y
-
-# Функція створення та навчання моделі
-def train_and_evaluate(model, X_train, Y_train, X_test, Y_test, epochs=100, batch_size=10):
-    model.compile(optimizer='adam', loss='mse')
-    history = model.fit(
-        X_train, Y_train, 
-        epochs=epochs, 
-        batch_size=batch_size, 
-        verbose=0, 
-        validation_data=(X_test, Y_test)
-    )
-    
-    Y_pred = model.predict(X_test, verbose=0).flatten()
-    
-    # Розрахунок середньої відносної помилки
-    error = np.mean(np.abs((Y_test - Y_pred) / (Y_test + 1e-8))) # 1e-8 щоб уникнути ділення на нуль
-    r2 = r2_score(Y_test, Y_pred)
-    
-    return history, error, Y_pred, r2
 
 # Генерація даних
 X, Y = generate_data()
@@ -72,7 +64,6 @@ X_train, X_test = X[:800], X[800:]
 Y_train, Y_test = Y[:800], Y[800:]
 
 # Реалізація Cascade Forward
-# a) 1 внутрішній шар з 20 нейронами
 inputs = Input(shape=(2,))
 hidden1 = Dense(20, activation='relu')(inputs)
 output = Dense(1)(hidden1)
@@ -80,7 +71,6 @@ output_cascade = Dense(1)(inputs)
 final_output = Add()([output, output_cascade])
 cascade_model_1 = Model(inputs=inputs, outputs=final_output)
 
-# b) 2 внутрішніх шари по 10 нейронів у кожному
 inputs_2 = Input(shape=(2,))
 hidden1_2 = Dense(10, activation='relu')(inputs_2)
 hidden2_2 = Dense(10, activation='relu')(hidden1_2)
@@ -89,7 +79,7 @@ output_cascade_2 = Dense(1)(inputs_2)
 final_output_2 = Add()([output_2, output_cascade_2])
 cascade_model_2 = Model(inputs=inputs_2, outputs=final_output_2)
 
-# Перелік моделей згідно із завданням
+# Перелік неініціалізованих архітектур моделей
 models = {
     "FeedForward (10 нейронів)": Sequential([Input(shape=(2,)), Dense(10, activation='relu'), Dense(1)]),
     "FeedForward (20 нейронів)": Sequential([Input(shape=(2,)), Dense(20, activation='relu'), Dense(1)]),
@@ -105,36 +95,92 @@ models = {
     ])
 }
 
-# Навчання моделей
+# Словники для збереження результатів
+histories = {}
 errors = {}
 predictions = {}
 r2_scores = {}
 
-plt.figure(figsize=(10, 6))
-
+# Основний цикл перевірки, завантаження, скачування або навчання
 for name, model in models.items():
-    print(f"Навчання {name}...")
-    # Рекурентні мережі (RNN) вимагають зміненої розмірності вхідних даних: (batch_size, timesteps, features)
-    if "Elman" in name:
-        X_train_rnn = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-        X_test_rnn = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
-        history, error, Y_pred, r2 = train_and_evaluate(model, X_train_rnn, Y_train, X_test_rnn, Y_test)
-    else:
-        history, error, Y_pred, r2 = train_and_evaluate(model, X_train, Y_train, X_test, Y_test)
+    print(f"\nОбробка моделі: {name}...")
+    
+    filename = MODEL_FILENAMES[name]
+    model_path = os.path.join(BASE_DIR, filename) if BASE_DIR else filename
+    model_url = RAW_BASE_URL + filename
+    
+    # Рекурентні мережі (RNN) вимагають зміненої розмірності вхідних даних
+    is_rnn = "Elman" in name
+    X_tr = X_train.reshape((X_train.shape[0], X_train.shape[1], 1)) if is_rnn else X_train
+    X_te = X_test.reshape((X_test.shape[0], X_test.shape[1], 1)) if is_rnn else X_test
 
+    loaded_successfully = False
+
+    # 1. Перевірка локального файлу
+    if os.path.exists(model_path):
+        print(f"[ІНФО] Знайдено локальну модель. Завантаження...")
+        try:
+            model = tf.keras.models.load_model(model_path)
+            loaded_successfully = True
+        except Exception as e:
+            print(f"[ПОМИЛКА] Не вдалося завантажити локальний файл ({e}).")
+
+    # 2. Спроба скачування з GitHub
+    if not loaded_successfully:
+        print(f"[ІНФО] Спроба завантаження з GitHub...")
+        try:
+            urllib.request.urlretrieve(model_url, model_path)
+            print("[ІНФО] Успішно завантажено з GitHub!")
+            model = tf.keras.models.load_model(model_path)
+            loaded_successfully = True
+        except Exception as e:
+            print(f"[ІНФО] Не вдалося завантажити з GitHub ({e}).")
+
+    # 3. Навчання, якщо файл не знайдено або пошкоджено
+    if not loaded_successfully:
+        print(f"[ІНФО] Починаємо навчання моделі з нуля...")
+        model.compile(optimizer='adam', loss='mse')
+        history = model.fit(
+            X_tr, Y_train, 
+            epochs=100, 
+            batch_size=10, 
+            verbose=0, 
+            validation_data=(X_te, Y_test)
+        )
+        histories[name] = history
+        print(f"[ІНФО] Збереження навченої моделі у {model_path}...")
+        model.save(model_path)
+
+    # 4. Оцінка моделі
+    Y_pred = model.predict(X_te, verbose=0).flatten()
+    error = np.mean(np.abs((Y_test - Y_pred) / (Y_test + 1e-8)))
+    r2 = r2_score(Y_test, Y_pred)
+    
     errors[name] = error
     predictions[name] = Y_pred
     r2_scores[name] = r2
 
-    # Візуалізація графіка залежності помилки в мережі від епохи навчання
-    plt.plot(history.history['loss'], label=name)
+# ══════════════════════════════════════════════════════════════════════════════
+# ЧАСТИНА 2 – Візуалізація результатів
+# ══════════════════════════════════════════════════════════════════════════════
 
-plt.title("Зміна MSE під час навчання")
-plt.xlabel("Епохи")
-plt.ylabel("MSE")
-plt.legend()
-plt.grid(True)
-plt.show()
+# Графік MSE малюється лише для моделей, що навчалися у поточній сесії
+if histories:
+    plt.figure(figsize=(10, 6))
+    for name, history in histories.items():
+        plt.plot(history.history['loss'], label=name)
+
+    plt.title("Зміна MSE під час навчання")
+    plt.xlabel("Епохи")
+    plt.ylabel("MSE")
+    plt.legend()
+    plt.grid(True)
+    
+    mse_plot_path = os.path.join(BASE_DIR, "mse_history.png") if BASE_DIR else "mse_history.png"
+    plt.savefig(mse_plot_path, bbox_inches="tight")
+    plt.show()
+else:
+    print("\n[ІНФО] Графік MSE пропущено (всі моделі завантажено з файлів).")
 
 # Візуалізація та порівняння передбачень
 plt.figure(figsize=(10, 5))
@@ -151,6 +197,9 @@ plt.ylabel("Передбачені значення")
 plt.legend()
 plt.title("Порівняння передбачень різних моделей")
 plt.grid(True)
+
+pred_plot_path = os.path.join(BASE_DIR, "predictions_comparison.png") if BASE_DIR else "predictions_comparison.png"
+plt.savefig(pred_plot_path, bbox_inches="tight")
 plt.show()
 
 # Виведення результатів та помилок

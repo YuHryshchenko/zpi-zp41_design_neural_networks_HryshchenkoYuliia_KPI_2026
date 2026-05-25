@@ -11,12 +11,14 @@
 import os
 import time
 import random
+import urllib.request
 import kaggle
 # from kaggle.api.kaggle_api_extended import KaggleApi as api
 import numpy as np
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
+import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (
@@ -52,6 +54,7 @@ else:
     # Set local paths
     ABSOLUTE_PATH = os.getcwd()
     BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
+    os.makedirs(BASE_DIR, exist_ok=True)
 
 # Встановлюємо kaggle
 # ! pip install kaggle
@@ -83,9 +86,11 @@ else:
 # КРОК 2. Розділяємо дані на навчальні та тестові
 # ============================================================
 
+NUM_EPOCHS=10
+
 img_size = (227, 227)
 batch_size = 32
-extract_path = "./raw-img"
+extract_path = BASE_DIR + "/raw-img"
 
 datagen = ImageDataGenerator(
     rescale=1.0 / 255,       # Нормалізація
@@ -114,62 +119,86 @@ val_generator = datagen.flow_from_directory(
 
 
 # ============================================================
-# КРОК 3. Створюємо шари нейромережі (архітектура AlexNet)
+# КРОК 3 & КРОК 4. Управління архітектурою та Навчання (AlexNet)
 # ============================================================
 
-model = Sequential([
-    Input(shape=(227, 227, 3)),
+MODEL_FILENAME = "alexnet_model.keras"
+model_path = os.path.join(BASE_DIR, MODEL_FILENAME) if BASE_DIR else MODEL_FILENAME
+RAW_MODEL_URL = f"https://raw.githubusercontent.com/YuHryshchenko/zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026/main/lab04/{MODEL_FILENAME}"
 
-    # Блок 1 — перший згортковий шар
-    Conv2D(96, (11, 11), strides=4, activation='relu'),
-    BatchNormalization(),
-    MaxPooling2D((3, 3), strides=2),
+history = None
+loaded_successfully = False
 
-    # Блок 2 — другий згортковий шар
-    Conv2D(256, (5, 5), activation='relu', padding='same'),
-    BatchNormalization(),
-    MaxPooling2D((3, 3), strides=2),
+# 1. Перевірка локального файлу
+if os.path.exists(model_path):
+    print(f"[ІНФО] Знайдено локальну модель AlexNet: {model_path}. Завантаження...")
+    try:
+        model = tf.keras.models.load_model(model_path)
+        loaded_successfully = True
+    except Exception as e:
+        print(f"[ПОМИЛКА] Не вдалося завантажити локальний файл ({e}).")
 
-    # Блок 3 — три послідовних згорткових шари
-    Conv2D(384, (3, 3), activation='relu', padding='same'),
-    Conv2D(384, (3, 3), activation='relu', padding='same'),
-    Conv2D(256, (3, 3), activation='relu', padding='same'),
-    BatchNormalization(),
-    MaxPooling2D((3, 3), strides=2),
+# 2. Спроба скачування з GitHub
+if not loaded_successfully:
+    print(f"[ІНФО] Локальну модель не знайдено. Спроба завантаження з GitHub...")
+    try:
+        urllib.request.urlretrieve(RAW_MODEL_URL, model_path)
+        print("[ІНФО] Модель AlexNet успішно завантажено з GitHub!")
+        model = tf.keras.models.load_model(model_path)
+        loaded_successfully = True
+    except Exception as e:
+        print(f"[ІНФО] Не вдалося завантажити оригінальну модель з GitHub ({e}).")
 
-    # Повнозв'язні шари
-    Flatten(),
-    Dense(4096, activation='relu'),
-    Dropout(0.5),
-    Dense(4096, activation='relu'),
-    Dropout(0.5),
-    Dense(10, activation='softmax')   # 10 класів
-])
+# 3. Навчання, якщо файл відсутній або сталася помилка
+if not loaded_successfully:
+    print("[ІНФО] Починаємо створення та навчання оригінальної моделі з нуля...")
+    model = Sequential([
+        Input(shape=(227, 227, 3)),
 
-optimizer = Adam(learning_rate=0.0001)
-model.compile(
-    optimizer=optimizer,
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
-)
+        # Блок 1 — перший згортковий шар
+        Conv2D(96, (11, 11), strides=4, activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((3, 3), strides=2),
 
+        # Блок 2 — другий згортковий шар
+        Conv2D(256, (5, 5), activation='relu', padding='same'),
+        BatchNormalization(),
+        MaxPooling2D((3, 3), strides=2),
+
+        # Блок 3 — три послідовних згорткових шари
+        Conv2D(384, (3, 3), activation='relu', padding='same'),
+        Conv2D(384, (3, 3), activation='relu', padding='same'),
+        Conv2D(256, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        MaxPooling2D((3, 3), strides=2),
+
+        # Повнозв'язні шари
+        Flatten(),
+        Dense(4096, activation='relu'),
+        Dropout(0.5),
+        Dense(4096, activation='relu'),
+        Dropout(0.5),
+        Dense(10, activation='softmax')   # 10 класів
+    ])
+
+    optimizer = Adam(learning_rate=0.0001)
+    model.compile(
+        optimizer=optimizer,
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    history = model.fit(
+        train_generator,
+        epochs=NUM_EPOCHS,
+        validation_data=val_generator
+    )
+    
+    print(f"[ІНФО] Збереження навченої моделі у {model_path}...")
+    model.save(model_path)
+
+print("\n=== Зведення оригінальної моделі ===")
 print(model.summary())
-
-# Total params: 58,324,746 (222.49 MB)
-# Trainable params: 58,323,530 (222.49 MB)
-# Non-trainable params: 1,216 (4.75 KB)
-
-
-# ============================================================
-# КРОК 4. Навчаємо модель
-# ============================================================
-
-history = model.fit(
-    train_generator,
-    epochs=2,
-    validation_data=val_generator
-)
-
 
 # ============================================================
 # КРОК 5. Виводимо точність та втрати на валідації
@@ -179,37 +208,39 @@ loss, accuracy = model.evaluate(val_generator)
 print(f"Точність на валідації: {accuracy:.4f}")
 print(f"Втрати (Loss): {loss:.4f}")
 
-# 164/164 ━━━━━━━━━━━━━━━━━━━━ 8s 50ms/step - accuracy: 0.7525 - loss: 1.1733
-# Точність на валідації: 0.7586
-# Втрати (Loss): 1.1274
-
 
 # ============================================================
 # КРОК 6. Будуємо графіки точності та втрати
 # ============================================================
 
-acc       = history.history['accuracy']
-val_acc   = history.history['val_accuracy']
-loss_hist = history.history['loss']
-val_loss  = history.history['val_loss']
-epochs_range = range(len(acc))
+if history is not None:
+    acc       = history.history['accuracy']
+    val_acc   = history.history['val_accuracy']
+    loss_hist = history.history['loss']
+    val_loss  = history.history['val_loss']
+    epochs_range = range(len(acc))
 
-plt.figure(figsize=(12, 5))
+    plt.figure(figsize=(12, 5))
 
-plt.subplot(1, 2, 1)
-plt.plot(epochs_range, acc,     label='Точність на тренуванні')
-plt.plot(epochs_range, val_acc, label='Точність на валідації')
-plt.legend()
-plt.title('Графік точності')
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_range, acc,     label='Точність на тренуванні')
+    plt.plot(epochs_range, val_acc, label='Точність на валідації')
+    plt.legend()
+    plt.title('Графік точності')
 
-plt.subplot(1, 2, 2)
-plt.plot(epochs_range, loss_hist, label='Втрати на тренуванні')
-plt.plot(epochs_range, val_loss,  label='Втрати на валідації')
-plt.legend()
-plt.title('Графік втрат')
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs_range, loss_hist, label='Втрати на тренуванні')
+    plt.plot(epochs_range, val_loss,  label='Втрати на валідації')
+    plt.legend()
+    plt.title('Графік втрат')
 
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    metrics_plot_path = os.path.join(BASE_DIR, 'alexnet_training_metrics.png') if BASE_DIR else 'alexnet_training_metrics.png'
+    plt.savefig(metrics_plot_path, dpi=300)
+    plt.show()
+    print(f"[ІНФО] Метрики навчання збережено у: {metrics_plot_path}")
+else:
+    print("[ІНФО] Графік історії навчання пропущено (оригінальну модель завантажено з файлу).")
 
 
 # ============================================================
@@ -241,7 +272,11 @@ plt.xlabel('Передбачений клас')
 plt.ylabel('Справжній клас')
 plt.title('Матриця помилок (Confusion Matrix)')
 plt.tight_layout()
+
+cm_plot_path = os.path.join(BASE_DIR, 'alexnet_confusion_matrix.png') if BASE_DIR else 'alexnet_confusion_matrix.png'
+plt.savefig(cm_plot_path, dpi=300)
 plt.show()
+print(f"[ІНФО] Матрицю помилок збережено у: {cm_plot_path}")
 
 # --- Метрики ---
 acc_score  = accuracy_score(y_true, y_pred)
@@ -280,10 +315,11 @@ predicted_class = class_names_list[np.argmax(predictions)]
 plt.imshow(img)
 plt.axis('off')
 plt.title(f"Очікуваний: {random_class}\nПередбачений: {predicted_class}")
-plt.show()
 
-# 1/1 ━━━━━━━━━━━━━━━━━━━━ 0s 39ms/step
-# [[4.87e-14 6.39e-10 1.00e+00 2.93e-19 1.41e-16 1.08e-16 1.47e-12 1.98e-11 1.66e-15 3.25e-17]]
+rand_sample_path = os.path.join(BASE_DIR, 'alexnet_random_prediction.png') if BASE_DIR else 'alexnet_random_prediction.png'
+plt.savefig(rand_sample_path, dpi=300)
+plt.show()
+print(f"[ІНФО] Тестове випадкове передбачення збережено у: {rand_sample_path}")
 
 
 # ============================================================
@@ -294,14 +330,6 @@ plt.show()
 def predict_image(img_path: str, model, class_names: list) -> str:
     """
     Розпізнає клас зображення за допомогою навченої моделі AlexNet.
-
-    Параметри:
-        img_path   — шлях до файлу зображення (не з датасету).
-        model      — навчена модель Keras.
-        class_names — список назв класів у порядку індексів.
-
-    Повертає:
-        Рядок з назвою передбаченого класу.
     """
     img       = image.load_img(img_path, target_size=(227, 227))
     img_array = image.img_to_array(img) / 255.0
@@ -319,7 +347,11 @@ def predict_image(img_path: str, model, class_names: list) -> str:
         f"Передбачений клас: {predicted_class}\n"
         f"Впевненість: {confidence:.2f}%"
     )
+    
+    custom_pred_path = os.path.join(BASE_DIR, 'alexnet_custom_prediction.png') if BASE_DIR else 'alexnet_custom_prediction.png'
+    plt.savefig(custom_pred_path, dpi=300)
     plt.show()
+    print(f"[ІНФО] Користувацьке передбачення збережено у: {custom_pred_path}")
 
     print(f"Передбачений клас : {predicted_class}")
     print(f"Впевненість       : {confidence:.2f}%")
@@ -333,7 +365,6 @@ def predict_image(img_path: str, model, class_names: list) -> str:
 
 
 # Приклад виклику функції з довільним зображенням (не з датасету)
-# Замінити шлях на реальний файл зображення:
 # predict_image("/content/drive/MyDrive/test_cat.jpg", model, class_names_list)
 
 
@@ -344,6 +375,7 @@ def predict_image(img_path: str, model, class_names: list) -> str:
 num_images  = 256
 batch_size_infer = 128
 output_csv  = "classification_results.csv"
+output_csv_path = os.path.join(BASE_DIR, output_csv) if BASE_DIR else output_csv
 
 # Збираємо всі шляхи до зображень
 all_images = []
@@ -387,8 +419,8 @@ df = pd.DataFrame(
     results,
     columns=["Шлях до файлу", "Справжній клас", "Розпізнаний клас"]
 )
-df.to_csv(output_csv, index=False, encoding="utf-8")
-print(f"Результати збережені у {output_csv}")
+df.to_csv(output_csv_path, index=False, encoding="utf-8")
+print(f"Результати збережені у {output_csv_path}")
 
 # Показуємо перші кілька рядків
 print(df.head(10).to_string(index=False))
@@ -401,41 +433,79 @@ print(df.head(10).to_string(index=False))
 # складністю (кількість параметрів, пам'ять, швидкість)
 # ============================================================
 
-# --- Оптимізована архітектура ---
-# Зміни порівняно з AlexNet:
-#   • зменшено кількість фільтрів у Conv-шарах (96→64, 256→128, 384→192, 256→128)
-#   • замінено Flatten+Dense(4096)×2 на GlobalAveragePooling2D + одна Dense(512)
-#   • зменшено кількість параметрів приблизно в 50×
-model_opt = Seq([
-    INP(shape=(227, 227, 3)),
+MODEL_OPT_FILENAME = "alexnet_lite_model.keras"
+model_opt_path = os.path.join(BASE_DIR, MODEL_OPT_FILENAME) if BASE_DIR else MODEL_OPT_FILENAME
+RAW_MODEL_OPT_URL = f"https://raw.githubusercontent.com/YuHryshchenko/zpi-zp41_design_neural_networks_HryshchenkoYuliia_KPI_2026/main/lab04/{MODEL_OPT_FILENAME}"
 
-    C2D(64, (11, 11), strides=4, activation='relu'),
-    BN(),
-    MP2D((3, 3), strides=2),
+history_opt = None
+loaded_opt_successfully = False
 
-    C2D(128, (5, 5), activation='relu', padding='same'),
-    BN(),
-    MP2D((3, 3), strides=2),
+# 1. Перевірка локального файлу Lite
+if os.path.exists(model_opt_path):
+    print(f"[ІНФО] Знайдено локальну модель AlexNet-Lite: {model_opt_path}. Завантаження...")
+    try:
+        model_opt = tf.keras.models.load_model(model_opt_path)
+        loaded_opt_successfully = True
+    except Exception as e:
+        print(f"[ПОМИЛКА] Не вдалося завантажити локальний файл Lite ({e}).")
 
-    C2D(192, (3, 3), activation='relu', padding='same'),
-    C2D(192, (3, 3), activation='relu', padding='same'),
-    C2D(128, (3, 3), activation='relu', padding='same'),
-    BN(),
-    MP2D((3, 3), strides=2),
+# 2. Спроба скачування Lite з GitHub
+if not loaded_opt_successfully:
+    print(f"[ІНФО] Локальну модель Lite не знайдено. Спроба завантаження з GitHub...")
+    try:
+        urllib.request.urlretrieve(RAW_MODEL_OPT_URL, model_opt_path)
+        print("[ІНФО] Модель AlexNet-Lite успішно завантажено з GitHub!")
+        model_opt = tf.keras.models.load_model(model_opt_path)
+        loaded_opt_successfully = True
+    except Exception as e:
+        print(f"[ІНФО] Не вдалося завантажити оптимізовану модель з GitHub ({e}).")
 
-    GAP(),                       # замість Flatten → набагато менше параметрів
+# 3. Навчання Lite, якщо файл відсутній або сталася помилка
+if not loaded_opt_successfully:
+    print("[ІНФО] Починаємо створення та навчання AlexNet-Lite з нуля...")
+    model_opt = Seq([
+        INP(shape=(227, 227, 3)),
 
-    D(512, activation='relu'),
-    DR(0.5),
-    D(10, activation='softmax')
-], name="AlexNet_Lite")
+        C2D(64, (11, 11), strides=4, activation='relu'),
+        BN(),
+        MP2D((3, 3), strides=2),
 
-optimizer_opt = Adam(learning_rate=0.0001)
-model_opt.compile(
-    optimizer=optimizer_opt,
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
-)
+        C2D(128, (5, 5), activation='relu', padding='same'),
+        BN(),
+        MP2D((3, 3), strides=2),
+
+        C2D(192, (3, 3), activation='relu', padding='same'),
+        C2D(192, (3, 3), activation='relu', padding='same'),
+        C2D(128, (3, 3), activation='relu', padding='same'),
+        BN(),
+        MP2D((3, 3), strides=2),
+
+        GAP(),                       # замість Flatten → набагато менше параметрів
+
+        D(512, activation='relu'),
+        DR(0.5),
+        D(10, activation='softmax')
+    ], name="AlexNet_Lite")
+
+    optimizer_opt = Adam(learning_rate=0.0001)
+    model_opt.compile(
+        optimizer=optimizer_opt,
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+
+    print("\nНавчання AlexNet-Lite...")
+    train_generator.reset()
+    val_generator.reset()
+
+    history_opt = model_opt.fit(
+        train_generator,
+        epochs=2,
+        validation_data=val_generator
+    )
+    
+    print(f"[ІНФО] Збереження навченої моделі Lite у {model_opt_path}...")
+    model_opt.save(model_opt_path)
 
 print("\n=== Оригінальна AlexNet ===")
 model.summary()
@@ -450,18 +520,7 @@ print(f"\nОригінальна AlexNet  — параметрів: {orig_params
 print(f"AlexNet-Lite         — параметрів: {opt_params:,}")
 print(f"Зменшення            : {orig_params / opt_params:.1f}x")
 
-# --- Навчання оптимізованої моделі ---
-print("\nНавчання AlexNet-Lite...")
-train_generator.reset()
-val_generator.reset()
-
-history_opt = model_opt.fit(
-    train_generator,
-    epochs=2,
-    validation_data=val_generator
-)
-
-# --- Оцінка оптимізованої моделі ---
+# --- Очікувана оцінка оптимізованої моделі ---
 loss_opt, acc_opt = model_opt.evaluate(val_generator)
 print(f"\nAlexNet-Lite — Точність на валідації : {acc_opt:.4f}")
 print(f"AlexNet-Lite — Втрати (Loss)         : {loss_opt:.4f}")
@@ -485,25 +544,32 @@ print(f"  AlexNet-Lite         : {t_opt:.2f} мс / зображення")
 print(f"  Прискорення          : {t_orig / t_opt:.2f}x")
 
 # --- Порівняльний графік ---
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+if history is not None and history_opt is not None:
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-axes[0].plot(history.history['val_accuracy'],     label='AlexNet (оригінал)')
-axes[0].plot(history_opt.history['val_accuracy'], label='AlexNet-Lite (оптим.)')
-axes[0].set_title('Точність на валідації')
-axes[0].set_xlabel('Епоха')
-axes[0].set_ylabel('Accuracy')
-axes[0].legend()
+    axes[0].plot(history.history['val_accuracy'],     label='AlexNet (оригінал)')
+    axes[0].plot(history_opt.history['val_accuracy'], label='AlexNet-Lite (оптим.)')
+    axes[0].set_title('Точність на валідації')
+    axes[0].set_xlabel('Епоха')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
 
-axes[1].plot(history.history['val_loss'],     label='AlexNet (оригінал)')
-axes[1].plot(history_opt.history['val_loss'], label='AlexNet-Lite (оптим.)')
-axes[1].set_title('Втрати на валідації')
-axes[1].set_xlabel('Епоха')
-axes[1].set_ylabel('Loss')
-axes[1].legend()
+    axes[1].plot(history.history['val_loss'],     label='AlexNet (оригінал)')
+    axes[1].plot(history_opt.history['val_loss'], label='AlexNet-Lite (оптим.)')
+    axes[1].set_title('Втрати на валідації')
+    axes[1].set_xlabel('Епоха')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
 
-plt.suptitle('Порівняння оригінальної AlexNet та AlexNet-Lite', fontsize=14)
-plt.tight_layout()
-plt.show()
+    plt.suptitle('Порівняння оригінальної AlexNet та AlexNet-Lite', fontsize=14)
+    plt.tight_layout()
+    
+    comp_plot_path = os.path.join(BASE_DIR, 'alexnet_comparison_history.png') if BASE_DIR else 'alexnet_comparison_history.png'
+    plt.savefig(comp_plot_path, dpi=300)
+    plt.show()
+    print(f"[ІНФО] Порівняльний графік моделей збережено у: {comp_plot_path}")
+else:
+    print("[ІНФО] Порівняльний графік пропущено (одна або обидві моделі завантажені з готового файлу).")
 
 # --- Зведена таблиця порівняння ---
 comparison = {
