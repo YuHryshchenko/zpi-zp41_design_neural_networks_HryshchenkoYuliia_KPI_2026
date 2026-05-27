@@ -12,13 +12,12 @@ import os
 import time
 import random
 import urllib.request
-import kaggle
-# from kaggle.api.kaggle_api_extended import KaggleApi as api
 import numpy as np
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
+from datasets import load_dataset
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (
@@ -47,40 +46,89 @@ def is_kaggle():
 
 if is_kaggle():
     print("Running on Kaggle")
-    # Set Kaggle-specific paths
     BASE_DIR = ""
 else:
     print("Running locally")
-    # Set local paths
     ABSOLUTE_PATH = os.getcwd()
     BASE_DIR = ABSOLUTE_PATH + "/" + CURRENT_LAB + "/"
     os.makedirs(BASE_DIR, exist_ok=True)
 
-# Встановлюємо kaggle
-# ! pip install kaggle
+# --- 1.2 Інтелектуальне завантаження датасету (Обхід Kaggle) ---
+def dataset_is_ready(path):
+    """Перевіряє, чи існують цільові директорії класів датасету animals10."""
+    if not os.path.exists(path):
+        return False
+    expected_classes = ['cane', 'cavallo', 'elefante', 'gatto']
+    for c in expected_classes:
+        if not os.path.exists(os.path.join(path, c)):
+            return False
+    return True
 
-# Монтуємо Google Drive
-# from google.colab import drive
-# drive.mount("/content/drive")
-# Mounted at /content/drive
+def download_dataset_huggingface(extract_path):
+    """
+    Kaggle блокує прямі завантаження без аутентифікації. 
+    Ця функція використовує дзеркало датасету на Hugging Face, 
+    завантажує його та відновлює оригінальну італійську структуру тек.
+    """
+    print("\n[ІНФО] Kaggle API не налаштовано. Використовуємо обхідний шлях через Hugging Face...")
+    try:        
+        # Відповідність англійських міток (Hugging Face) до італійських (оригінальний Kaggle)
+        label_map = {
+            'Butterfly': 'farfalla', 'Cat': 'gatto', 'Chicken': 'gallina',
+            'Cow': 'mucca', 'Dog': 'cane', 'Elephant': 'elefante',
+            'Horse': 'cavallo', 'Sheep': 'pecora', 'Spider': 'ragno',
+            'Squirrel': 'scoiattolo'
+        }
+        
+        print("[ІНФО] Завантаження даних (потребує наявності бібліотеки: pip install datasets)...")
+        ds = load_dataset("Rapidata/Animals-10", split="train")
+        
+        os.makedirs(extract_path, exist_ok=True)
+        print(f"[ІНФО] Конвертація та збереження зображень у {extract_path} (це займе кілька хвилин)...")
+        
+        features = ds.features['label']
+        
+        for i, item in enumerate(ds):
+            img = item['image']
+            label_val = item['label']
+            
+            if isinstance(label_val, int):
+                label_en = features.int2str(label_val)
+            else:
+                label_en = str(label_val)
+                
+            label_it = label_map.get(label_en, str(label_en).lower())
+            class_dir = os.path.join(extract_path, label_it)
+            os.makedirs(class_dir, exist_ok=True)
+            
+            img_path = os.path.join(class_dir, f"img_{i}.jpg")
+            if not os.path.exists(img_path):
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                img.save(img_path)
+                
+        print("[ІНФО] Завантаження з Hugging Face успішно завершено!")
+    except ImportError:
+        print("[ПОМИЛКА] Для завантаження без Kaggle API потрібно встановити бібліотеку 'datasets'.")
+        print("Виконайте у терміналі: pip install datasets")
+    except Exception as e:
+        print(f"[ПОМИЛКА] Під час завантаження з Hugging Face сталася помилка: {e}")
 
-# Робимо папку та копіюємо в неї файл з API key
-# ! mkdir ~/.kaggle
-# ! cp /content/drive/MyDrive/kaggle/kaggle.json ~/.kaggle/kaggle.json
+# Визначаємо шляхи
+local_extract_path = os.path.join(BASE_DIR, "raw-img") if BASE_DIR else "raw-img"
+KAGGLE_INPUT_PATH = '/kaggle/input/animals10/raw-img'
+extract_path = ""
 
-# Обмежуємо доступ до файлу
-# ! chmod 600 ~/.kaggle/kaggle.json
-
-# Завантажуємо датасет
-# kaggle datasets download alessiocorrado99/animals10
-
-# Розпаковуємо архів
-# unzip animals10.zip
-
-#kaggle.api.authenticate()
-
-# Download and unzip
-#kaggle.api.dataset_download_files(dataset="alessiocorrado99/animals10", path='.', unzip=True)
+if is_kaggle() and dataset_is_ready(KAGGLE_INPUT_PATH):
+    extract_path = KAGGLE_INPUT_PATH
+    print(f"[ІНФО] Kaggle: датасет знайдено у {extract_path}. Завантаження не потрібне.")
+elif dataset_is_ready(local_extract_path):
+    extract_path = local_extract_path
+    print(f"[ІНФО] Датасет вже присутній у {extract_path}. Завантаження пропущено.")
+else:
+    # Обхідний шлях завантаження без токенів Kaggle
+    download_dataset_huggingface(local_extract_path)
+    extract_path = local_extract_path
 
 # ============================================================
 # КРОК 2. Розділяємо дані на навчальні та тестові
@@ -90,7 +138,6 @@ NUM_EPOCHS=10
 
 img_size = (227, 227)
 batch_size = 32
-extract_path = BASE_DIR + "/raw-img"
 
 datagen = ImageDataGenerator(
     rescale=1.0 / 255,       # Нормалізація
@@ -113,10 +160,6 @@ val_generator = datagen.flow_from_directory(
     class_mode='categorical',
     subset='validation'
 )
-
-# Found 20947 images belonging to 10 classes.
-# Found 5232 images belonging to 10 classes.
-
 
 # ============================================================
 # КРОК 3 & КРОК 4. Управління архітектурою та Навчання (AlexNet)
@@ -208,7 +251,6 @@ loss, accuracy = model.evaluate(val_generator)
 print(f"Точність на валідації: {accuracy:.4f}")
 print(f"Втрати (Loss): {loss:.4f}")
 
-
 # ============================================================
 # КРОК 6. Будуємо графіки точності та втрати
 # ============================================================
@@ -242,10 +284,8 @@ if history is not None:
 else:
     print("[ІНФО] Графік історії навчання пропущено (оригінальну модель завантажено з файлу).")
 
-
 # ============================================================
 # КРОК 7. Будуємо матрицю помилок та обраховуємо метрики
-#         (accuracy, precision, recall, F-Score)
 # ============================================================
 
 # Отримуємо передбачення для всієї валідаційної вибірки
@@ -292,24 +332,21 @@ print(f"F-Score   : {f1:.4f}")
 print("\nДетальний звіт по класах:")
 print(classification_report(y_true, y_pred, target_names=class_names, zero_division=0))
 
-
 # ============================================================
 # КРОК 8. Перевіряємо розпізнавання на випадковому зображенні
-#         з набору даних
 # ============================================================
 
 class_names_list = list(train_generator.class_indices.keys())
 
 random_class      = random.choice(class_names_list)
-random_image_path = random.choice(os.listdir(f"{extract_path}/{random_class}"))
-img_path          = f"{extract_path}/{random_class}/{random_image_path}"
+random_image_path = random.choice(os.listdir(os.path.join(extract_path, random_class)))
+img_path          = os.path.join(extract_path, random_class, random_image_path)
 
 img       = image.load_img(img_path, target_size=(227, 227))
 img_array = image.img_to_array(img) / 255.0
 img_array = np.expand_dims(img_array, axis=0)
 
 predictions     = model.predict(img_array)
-print(predictions)
 predicted_class = class_names_list[np.argmax(predictions)]
 
 plt.imshow(img)
@@ -321,16 +358,11 @@ plt.savefig(rand_sample_path, dpi=300)
 plt.show()
 print(f"[ІНФО] Тестове випадкове передбачення збережено у: {rand_sample_path}")
 
-
 # ============================================================
 # КРОК 9. Тестування моделі на зображеннях НЕ з набору даних
-#         (написати функцію розпізнавання зображень)
 # ============================================================
 
 def predict_image(img_path: str, model, class_names: list) -> str:
-    """
-    Розпізнає клас зображення за допомогою навченої моделі AlexNet.
-    """
     img       = image.load_img(img_path, target_size=(227, 227))
     img_array = image.img_to_array(img) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
@@ -340,7 +372,6 @@ def predict_image(img_path: str, model, class_names: list) -> str:
     predicted_class = class_names[predicted_idx]
     confidence      = preds[0][predicted_idx] * 100
 
-    # Відображення результату
     plt.imshow(img)
     plt.axis('off')
     plt.title(
@@ -363,11 +394,6 @@ def predict_image(img_path: str, model, class_names: list) -> str:
 
     return predicted_class
 
-
-# Приклад виклику функції з довільним зображенням (не з датасету)
-# predict_image("/content/drive/MyDrive/test_cat.jpg", model, class_names_list)
-
-
 # ============================================================
 # КРОК 10. Пакетна класифікація 256 зображень → CSV
 # ============================================================
@@ -377,7 +403,6 @@ batch_size_infer = 128
 output_csv  = "classification_results.csv"
 output_csv_path = os.path.join(BASE_DIR, output_csv) if BASE_DIR else output_csv
 
-# Збираємо всі шляхи до зображень
 all_images = []
 for class_name in os.listdir(extract_path):
     class_dir = os.path.join(extract_path, class_name)
@@ -386,11 +411,9 @@ for class_name in os.listdir(extract_path):
             img_path = os.path.join(class_dir, img_name)
             all_images.append((img_path, class_name))
 
-selected_images = random.sample(all_images, num_images)
-
+selected_images = random.sample(all_images, min(num_images, len(all_images)))
 
 def load_batch(image_data):
-    """Завантажує батч зображень у масив numpy."""
     images, paths, true_classes = [], [], []
     for img_path, true_class in image_data:
         img       = image.load_img(img_path, target_size=(227, 227))
@@ -400,12 +423,11 @@ def load_batch(image_data):
         true_classes.append(true_class)
     return np.array(images), paths, true_classes
 
-
 results = []
-for i in range(0, num_images, batch_size_infer):
+for i in range(0, len(selected_images), batch_size_infer):
     batch_data                              = selected_images[i:i + batch_size_infer]
     batch_images, batch_paths, batch_true   = load_batch(batch_data)
-    predictions_batch                       = model.predict(batch_images)
+    predictions_batch                       = model.predict(batch_images, verbose=0)
     predicted_classes                       = np.argmax(predictions_batch, axis=1)
 
     for j in range(len(batch_paths)):
@@ -421,16 +443,11 @@ df = pd.DataFrame(
 )
 df.to_csv(output_csv_path, index=False, encoding="utf-8")
 print(f"Результати збережені у {output_csv_path}")
-
-# Показуємо перші кілька рядків
 print(df.head(10).to_string(index=False))
-
 
 # ============================================================
 # ДОДАТКОВЕ ЗАВДАННЯ (+1 бал)
 # Оптимізована архітектура AlexNet (AlexNet-Lite)
-# Порівняння з оригінальною за точністю та обчислювальною
-# складністю (кількість параметрів, пам'ять, швидкість)
 # ============================================================
 
 MODEL_OPT_FILENAME = "alexnet_lite_model.keras"
@@ -440,16 +457,14 @@ RAW_MODEL_OPT_URL = f"https://raw.githubusercontent.com/YuHryshchenko/zpi-zp41_d
 history_opt = None
 loaded_opt_successfully = False
 
-# 1. Перевірка локального файлу Lite
 if os.path.exists(model_opt_path):
-    print(f"[ІНФО] Знайдено локальну модель AlexNet-Lite: {model_opt_path}. Завантаження...")
+    print(f"\n[ІНФО] Знайдено локальну модель AlexNet-Lite: {model_opt_path}. Завантаження...")
     try:
         model_opt = tf.keras.models.load_model(model_opt_path)
         loaded_opt_successfully = True
     except Exception as e:
         print(f"[ПОМИЛКА] Не вдалося завантажити локальний файл Lite ({e}).")
 
-# 2. Спроба скачування Lite з GitHub
 if not loaded_opt_successfully:
     print(f"[ІНФО] Локальну модель Lite не знайдено. Спроба завантаження з GitHub...")
     try:
@@ -460,7 +475,6 @@ if not loaded_opt_successfully:
     except Exception as e:
         print(f"[ІНФО] Не вдалося завантажити оптимізовану модель з GitHub ({e}).")
 
-# 3. Навчання Lite, якщо файл відсутній або сталася помилка
 if not loaded_opt_successfully:
     print("[ІНФО] Починаємо створення та навчання AlexNet-Lite з нуля...")
     model_opt = Seq([
@@ -480,7 +494,7 @@ if not loaded_opt_successfully:
         BN(),
         MP2D((3, 3), strides=2),
 
-        GAP(),                       # замість Flatten → набагато менше параметрів
+        GAP(),                       
 
         D(512, activation='relu'),
         DR(0.5),
@@ -513,19 +527,16 @@ model.summary()
 print("\n=== Оптимізована AlexNet-Lite ===")
 model_opt.summary()
 
-# --- Порівняння кількості параметрів ---
 orig_params = model.count_params()
 opt_params  = model_opt.count_params()
 print(f"\nОригінальна AlexNet  — параметрів: {orig_params:,}")
 print(f"AlexNet-Lite         — параметрів: {opt_params:,}")
 print(f"Зменшення            : {orig_params / opt_params:.1f}x")
 
-# --- Очікувана оцінка оптимізованої моделі ---
 loss_opt, acc_opt = model_opt.evaluate(val_generator)
 print(f"\nAlexNet-Lite — Точність на валідації : {acc_opt:.4f}")
 print(f"AlexNet-Lite — Втрати (Loss)         : {loss_opt:.4f}")
 
-# --- Швидкість інференсу (час на 1 зображення) ---
 sample_img = np.random.rand(1, 227, 227, 3).astype(np.float32)
 
 t0 = time.perf_counter()
@@ -543,7 +554,6 @@ print(f"  Оригінальна AlexNet  : {t_orig:.2f} мс / зображен
 print(f"  AlexNet-Lite         : {t_opt:.2f} мс / зображення")
 print(f"  Прискорення          : {t_orig / t_opt:.2f}x")
 
-# --- Порівняльний графік ---
 if history is not None and history_opt is not None:
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
@@ -569,9 +579,8 @@ if history is not None and history_opt is not None:
     plt.show()
     print(f"[ІНФО] Порівняльний графік моделей збережено у: {comp_plot_path}")
 else:
-    print("[ІНФО] Порівняльний графік пропущено (одна або обидві моделі завантажені з готового файлу).")
+    print("\n[ІНФО] Порівняльний графік пропущено (одна або обидві моделі завантажені з готового файлу).")
 
-# --- Зведена таблиця порівняння ---
 comparison = {
     "Модель"          : ["AlexNet (оригінал)", "AlexNet-Lite (оптим.)"],
     "Параметрів"      : [f"{orig_params:,}", f"{opt_params:,}"],
